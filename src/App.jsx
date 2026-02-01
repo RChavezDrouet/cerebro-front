@@ -1,199 +1,134 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
-import { Users, Fingerprint, PlusCircle, LayoutDashboard, LogOut, Lock } from 'lucide-react'
+import MetricsChart from './components/MetricsChart'
+import { PlusCircle, LayoutDashboard, LogOut, Lock, Building, Server, Activity, Fingerprint } from 'lucide-react'
 
 function App() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-
-  // Estados del Dashboard
-  const [activeTab, setActiveTab] = useState('tenants')
+  const [activeTab, setActiveTab] = useState('dashboard')
+  const [tenantsList, setTenantsList] = useState([])
+  const [devicesList, setDevicesList] = useState([])
   const [tenantForm, setTenantForm] = useState({ ruc: '', name: '', email: '' })
   const [deviceForm, setDeviceForm] = useState({ serial: '', name: '', tenantId: '' })
 
-  // Verificar sesión al cargar
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
+      setSession(session); if (session) fetchData()
     })
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
+      setSession(session); if (session) fetchData()
     })
-
     return () => subscription.unsubscribe()
   }, [])
 
-  const handleLogin = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) alert('Error al entrar: ' + error.message)
-    setLoading(false)
+  const fetchData = async () => {
+    const [tenantsRes, devicesRes] = await Promise.all([
+      supabase.from('tenants').select('*').order('created_at', { ascending: false }),
+      supabase.from('biometric_devices').select('*, tenants(business_name)').order('created_at', { ascending: false })
+    ])
+    if (tenantsRes.data) setTenantsList(tenantsRes.data)
+    if (devicesRes.data) setDevicesList(devicesRes.data)
   }
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
+  const handleLogin = async (e) => {
+    e.preventDefault(); setLoading(true)
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) alert(error.message)
+    setLoading(false)
   }
 
   const handleCreateTenant = async (e) => {
     e.preventDefault()
-    const { error } = await supabase
-      .from('tenants')
-      .insert([{ 
-        ruc: tenantForm.ruc, 
-        business_name: tenantForm.name,
-        legal_rep_name: 'Admin', 
-        legal_rep_email: tenantForm.email
-      }])
-    
-    if (error) alert('Error: ' + error.message)
-    else {
-      alert('¡Cliente creado exitosamente!')
-      setTenantForm({ ruc: '', name: '', email: '' })
-    }
+    const { error } = await supabase.from('tenants').insert([{ ruc: tenantForm.ruc, business_name: tenantForm.name, legal_rep_email: tenantForm.email }])
+    if (error) alert(error.message); else { alert('✅ Cliente creado'); setTenantForm({ ruc: '', name: '', email: '' }); fetchData() }
   }
 
   const handleRegisterDevice = async (e) => {
     e.preventDefault()
-    const { error } = await supabase
-      .from('biometric_devices')
-      .insert([{
-        serial_number: deviceForm.serial,
-        name: deviceForm.name,
-        tenant_id: deviceForm.tenantId
-      }])
-
-    if (error) alert('Error: ' + error.message)
-    else {
-      alert('¡Biométrico autorizado!')
-      setDeviceForm({ serial: '', name: '', tenantId: '' })
-    }
+    const { error } = await supabase.from('biometric_devices').insert([{ serial_number: deviceForm.serial, name: deviceForm.name, tenant_id: deviceForm.tenantId, status: 'authorized' }])
+    if (error) alert(error.message); else { alert('✅ Dispositivo vinculado'); setDeviceForm({ serial: '', name: '', tenantId: '' }); fetchData() }
   }
 
-  // --- PANTALLA DE LOGIN ---
-  if (!session) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-100">
-        <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-2xl border border-indigo-100">
-          <div className="text-center mb-8">
-            <div className="inline-flex p-4 bg-indigo-100 rounded-full text-cerebro-main mb-4">
-              <Lock size={32} />
-            </div>
-            <h1 className="text-2xl font-bold text-slate-800">Acceso a CEREBRO</h1>
-            <p className="text-slate-500">Solo personal autorizado de Rober León</p>
-          </div>
-          <form onSubmit={handleLogin} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Correo Corporativo</label>
-              <input type="email" required className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cerebro-main outline-none"
-                value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@roberleon.com" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">Contraseña</label>
-              <input type="password" required className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cerebro-main outline-none"
-                value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-            </div>
-            <button disabled={loading} className="w-full bg-cerebro-main hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition shadow-lg flex justify-center">
-              {loading ? 'Verificando...' : 'Iniciar Sesión'}
-            </button>
-          </form>
-        </div>
+  if (!session) return (
+    <div className="flex h-screen items-center justify-center bg-slate-100 font-sans">
+      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl">
+        <div className="text-center mb-8"><div className="inline-flex p-4 bg-indigo-600 rounded-full text-white mb-4"><Lock size={32} /></div><h1 className="text-2xl font-bold text-slate-800">CEREBRO ADMIN</h1></div>
+        <form onSubmit={handleLogin} className="space-y-5">
+          <input type="email" required className="w-full p-3 border rounded-xl" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@roberleon.com" />
+          <input type="password" required className="w-full p-3 border rounded-xl" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+          <button disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition">{loading ? '...' : 'Entrar'}</button>
+        </form>
       </div>
-    )
-  }
+    </div>
+  )
 
-  // --- DASHBOARD ---
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
-      <aside className="w-64 bg-gradient-to-b from-cerebro-main to-cerebro-dark text-white p-6 flex flex-col shadow-2xl">
-        <h1 className="text-2xl font-bold mb-10 tracking-wider flex items-center gap-2">
-          <LayoutDashboard size={28} />
-          <div>CEREBRO <span className="text-xs opacity-70 block font-normal">SaaS Admin</span></div>
-        </h1>
-        <nav className="space-y-4 flex-1">
-          <button onClick={() => setActiveTab('tenants')} className={`flex items-center space-x-3 w-full p-3 rounded-xl transition-all duration-200 ${activeTab === 'tenants' ? 'bg-white/20 shadow-inner' : 'hover:bg-white/10'}`}>
-            <Users size={20} /> <span className="font-medium">Gestión Clientes</span>
-          </button>
-          <button onClick={() => setActiveTab('devices')} className={`flex items-center space-x-3 w-full p-3 rounded-xl transition-all duration-200 ${activeTab === 'devices' ? 'bg-white/20 shadow-inner' : 'hover:bg-white/10'}`}>
-            <Fingerprint size={20} /> <span className="font-medium">Biométricos</span>
-          </button>
+      <aside className="w-64 bg-[#0f172a] text-white p-6 flex flex-col shadow-2xl">
+        <h1 className="text-xl font-bold mb-10 tracking-wider flex items-center gap-2 text-indigo-400"><LayoutDashboard /> CEREBRO</h1>
+        <nav className="space-y-2 flex-1">
+          {['dashboard', 'tenants', 'devices'].map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)} className={`flex items-center space-x-3 w-full p-3 rounded-lg transition ${activeTab === tab ? 'bg-indigo-600 shadow-lg' : 'hover:bg-white/10 text-slate-400 hover:text-white'}`}>
+              {tab === 'dashboard' && <Activity size={20} />} {tab === 'tenants' && <Building size={20} />} {tab === 'devices' && <Server size={20} />}
+              <span className="capitalize">{tab === 'tenants' ? 'Clientes' : tab === 'devices' ? 'Biométricos' : 'Métricas'}</span>
+            </button>
+          ))}
         </nav>
-        
-        <button onClick={handleLogout} className="mt-auto flex items-center space-x-3 w-full p-3 rounded-xl hover:bg-red-500/20 text-red-100 transition">
-          <LogOut size={20} /> <span>Cerrar Sesión</span>
-        </button>
+        <button onClick={() => supabase.auth.signOut()} className="mt-auto flex items-center space-x-3 w-full p-3 rounded-lg hover:bg-red-500/10 text-red-400 transition"><LogOut size={20} /> <span>Salir</span></button>
       </aside>
 
-      <main className="flex-1 p-10 overflow-y-auto bg-slate-50">
-        <div className="mb-6 flex justify-end text-sm text-slate-400">
-          Usuario: {session.user.email}
-        </div>
+      <main className="flex-1 p-8 overflow-y-auto">
+        <header className="mb-8"><h2 className="text-2xl font-bold text-slate-800 capitalize">{activeTab === 'tenants' ? 'Gestión de Clientes' : activeTab === 'devices' ? 'Inventario Hardware' : 'Panel de Control'}</h2><p className="text-sm text-slate-500">Usuario: {session.user.email}</p></header>
+        
+        {activeTab === 'dashboard' && (
+          <div className="animate-fadeIn">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              {[{l:'Clientes',v:tenantsList.length, c:'text-indigo-600'}, {l:'Activos',v:devicesList.filter(d=>d.status==='authorized').length, c:'text-emerald-500'}, {l:'Alertas',v:devicesList.filter(d=>d.status==='revoked').length, c:'text-red-500'}].map((m,i)=>(
+                <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-slate-400 uppercase">{m.l}</p><p className={`text-3xl font-extrabold mt-2 ${m.c}`}>{m.v}</p></div>
+              ))}
+            </div>
+            <MetricsChart devices={devicesList} />
+          </div>
+        )}
 
         {activeTab === 'tenants' && (
-          <div className="max-w-3xl mx-auto bg-white p-10 rounded-3xl shadow-xl border border-indigo-50">
-            <h2 className="text-3xl font-bold text-slate-800 mb-8 flex items-center gap-3">
-              <div className="p-3 bg-indigo-100 rounded-full text-cerebro-main"><PlusCircle size={32} /></div>
-              Nuevo Inquilino
-            </h2>
-            <form onSubmit={handleCreateTenant} className="space-y-6">
-              <div>
-                <label className="block text-sm font-semibold text-slate-600 mb-2">Razón Social</label>
-                <input type="text" required className="w-full p-4 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-cerebro-main outline-none transition" 
-                  value={tenantForm.name} onChange={e => setTenantForm({...tenantForm, name: e.target.value})} placeholder="Ej: Corporación Favorita C.A." />
-              </div>
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-semibold text-slate-600 mb-2">RUC / ID Fiscal</label>
-                  <input type="text" required className="w-full p-4 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-cerebro-main outline-none transition" 
-                    value={tenantForm.ruc} onChange={e => setTenantForm({...tenantForm, ruc: e.target.value})} placeholder="17900..." />
-                </div>
-                <div>
-                  <label className="block text-sm font-semibold text-slate-600 mb-2">Email Contacto</label>
-                  <input type="email" required className="w-full p-4 border border-slate-200 rounded-xl focus:ring-4 focus:ring-indigo-100 focus:border-cerebro-main outline-none transition" 
-                    value={tenantForm.email} onChange={e => setTenantForm({...tenantForm, email: e.target.value})} placeholder="admin@empresa.com" />
-                </div>
-              </div>
-              <button className="w-full bg-gradient-to-r from-cerebro-main to-indigo-600 hover:from-indigo-600 hover:to-indigo-800 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-200 transition transform hover:scale-[1.01] active:scale-95 mt-4">
-                Registrar Cliente & Enviar Credenciales
-              </button>
-            </form>
+          <div className="space-y-6 animate-fadeIn">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border"><h3 className="font-bold text-slate-700 mb-4 flex gap-2"><PlusCircle className="text-indigo-600"/> Nuevo Cliente</h3>
+              <form onSubmit={handleCreateTenant} className="grid md:grid-cols-3 gap-4">
+                <input className="p-3 border rounded-lg" placeholder="Razón Social" value={tenantForm.name} onChange={e => setTenantForm({...tenantForm, name: e.target.value})} required />
+                <input className="p-3 border rounded-lg" placeholder="RUC" value={tenantForm.ruc} onChange={e => setTenantForm({...tenantForm, ruc: e.target.value})} required />
+                <input className="p-3 border rounded-lg" placeholder="Email" value={tenantForm.email} onChange={e => setTenantForm({...tenantForm, email: e.target.value})} required />
+                <button className="bg-indigo-600 text-white font-bold py-3 rounded-lg md:col-span-3 hover:bg-indigo-700">Registrar</button>
+              </form>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+              <table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="p-4">Empresa</th><th className="p-4">RUC</th><th className="p-4">ID (UUID)</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">{tenantsList.map(t=>(<tr key={t.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{t.business_name}</td><td className="p-4">{t.ruc}</td><td className="p-4 font-mono text-xs text-slate-400 select-all">{t.id}</td></tr>))}</tbody></table>
+            </div>
           </div>
         )}
 
         {activeTab === 'devices' && (
-          <div className="max-w-3xl mx-auto bg-white p-10 rounded-3xl shadow-xl border border-pink-50">
-            <h2 className="text-3xl font-bold text-slate-800 mb-8 flex items-center gap-3">
-              <div className="p-3 bg-pink-100 rounded-full text-cerebro-accent"><Fingerprint size={32} /></div>
-              Autorizar Biométrico
-            </h2>
-            <form onSubmit={handleRegisterDevice} className="space-y-6">
-              <div>
-                <label className="block text-sm font-semibold text-slate-600 mb-2">Número de Serie (SN)</label>
-                <input type="text" required placeholder="Ej: ZK-2938482" className="w-full p-4 border border-slate-200 rounded-xl focus:ring-4 focus:ring-pink-100 focus:border-cerebro-accent outline-none transition"
-                  value={deviceForm.serial} onChange={e => setDeviceForm({...deviceForm, serial: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-600 mb-2">Nombre del Dispositivo</label>
-                <input type="text" placeholder="Ej: Entrada Principal" className="w-full p-4 border border-slate-200 rounded-xl focus:ring-4 focus:ring-pink-100 focus:border-cerebro-accent outline-none transition"
-                  value={deviceForm.name} onChange={e => setDeviceForm({...deviceForm, name: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-slate-600 mb-2">UUID del Tenant (Cliente)</label>
-                <input type="text" required placeholder="Pega el ID del cliente aquí" className="w-full p-4 border border-slate-200 rounded-xl focus:ring-4 focus:ring-pink-100 focus:border-cerebro-accent outline-none transition font-mono text-sm"
-                  value={deviceForm.tenantId} onChange={e => setDeviceForm({...deviceForm, tenantId: e.target.value})} />
-              </div>
-              <button className="w-full bg-gradient-to-r from-cerebro-accent to-pink-600 hover:from-pink-600 hover:to-pink-800 text-white font-bold py-4 rounded-xl shadow-lg shadow-pink-200 transition transform hover:scale-[1.01] active:scale-95 mt-4">
-                Autorizar Dispositivo
-              </button>
-            </form>
+          <div className="space-y-6 animate-fadeIn">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border"><h3 className="font-bold text-slate-700 mb-4 flex gap-2"><Fingerprint className="text-indigo-600"/> Autorizar Hardware</h3>
+              <form onSubmit={handleRegisterDevice} className="grid md:grid-cols-3 gap-4">
+                <input className="p-3 border rounded-lg" placeholder="Serial (SN)" value={deviceForm.serial} onChange={e => setDeviceForm({...deviceForm, serial: e.target.value})} required />
+                <input className="p-3 border rounded-lg" placeholder="Nombre" value={deviceForm.name} onChange={e => setDeviceForm({...deviceForm, name: e.target.value})} />
+                <input className="p-3 border rounded-lg font-mono text-xs" placeholder="UUID Cliente" value={deviceForm.tenantId} onChange={e => setDeviceForm({...deviceForm, tenantId: e.target.value})} required />
+                <button className="bg-indigo-600 text-white font-bold py-3 rounded-lg md:col-span-3 hover:bg-indigo-700">Vincular</button>
+              </form>
+            </div>
+            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+              <table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="p-4">Serial</th><th className="p-4">Nombre</th><th className="p-4">Cliente</th><th className="p-4">Estado</th></tr></thead>
+                <tbody className="divide-y divide-slate-100">{devicesList.map(d=>(<tr key={d.id} className="hover:bg-slate-50"><td className="p-4 font-mono font-bold">{d.serial_number}</td><td className="p-4">{d.name}</td><td className="p-4 text-indigo-600">{d.tenants?.business_name}</td><td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-bold ${d.status==='authorized'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{d.status}</span></td></tr>))}</tbody></table>
+            </div>
           </div>
         )}
       </main>
     </div>
   )
 }
-
 export default App
