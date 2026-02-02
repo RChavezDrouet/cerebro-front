@@ -1,134 +1,216 @@
 import { useState, useEffect } from 'react'
-import { supabase } from './supabaseClient'
-import MetricsChart from './components/MetricsChart'
-import { PlusCircle, LayoutDashboard, LogOut, Lock, Building, Server, Activity, Fingerprint } from 'lucide-react'
+import { createClient } from '@supabase/supabase-js'
+import { Shield, Lock, Loader, AlertCircle, UserCheck, LogOut } from 'lucide-react'
 
-function App() {
-  const [session, setSession] = useState(null)
-  const [loading, setLoading] = useState(false)
+// --- 1. IMPORTAR DASHBOARD REAL ---
+// (Asegúrate de que src/components/AdminDashboard.jsx exista)
+import AdminDashboard from './components/AdminDashboard'
+
+// --- 2. CONFIGURACIÓN DE SUPABASE ---
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabase = createClient(supabaseUrl, supabaseKey)
+
+// --- 3. COMPONENTES TEMPORALES (Para roles que aún no construimos) ---
+
+const AssistantDashboard = ({ session, onLogout }) => (
+  <div className="p-10 bg-slate-50 min-h-screen">
+    <div className="max-w-7xl mx-auto">
+      <div className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold text-slate-800">Panel de Asistente</h1>
+        <button onClick={onLogout} className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200">
+          <LogOut size={18} /> Salir
+        </button>
+      </div>
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+        <h2 className="text-xl font-semibold mb-2 text-purple-600">Módulo de Cobranzas</h2>
+        <p>Este módulo está en construcción. Aquí verás la gestión de facturas.</p>
+      </div>
+    </div>
+  </div>
+)
+
+const UserDashboard = ({ session, onLogout }) => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-100">
+    <div className="text-center p-8 bg-white rounded-xl shadow-lg border border-slate-200">
+      <div className="inline-block p-3 bg-slate-100 rounded-full mb-4">
+        <UserCheck className="w-8 h-8 text-slate-600" />
+      </div>
+      <h1 className="text-2xl font-bold text-slate-800 mb-2">Cuenta de Usuario</h1>
+      <p className="text-slate-500 mb-6">No tienes permisos administrativos asignados.</p>
+      <button onClick={onLogout} className="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition">
+        Cerrar Sesión
+      </button>
+    </div>
+  </div>
+)
+
+// --- 4. PANTALLA DE LOGIN ---
+const LoginScreen = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [activeTab, setActiveTab] = useState('dashboard')
-  const [tenantsList, setTenantsList] = useState([])
-  const [devicesList, setDevicesList] = useState([])
-  const [tenantForm, setTenantForm] = useState({ ruc: '', name: '', email: '' })
-  const [deviceForm, setDeviceForm] = useState({ serial: '', name: '', tenantId: '' })
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session); if (session) fetchData()
-    })
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session); if (session) fetchData()
-    })
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const fetchData = async () => {
-    const [tenantsRes, devicesRes] = await Promise.all([
-      supabase.from('tenants').select('*').order('created_at', { ascending: false }),
-      supabase.from('biometric_devices').select('*, tenants(business_name)').order('created_at', { ascending: false })
-    ])
-    if (tenantsRes.data) setTenantsList(tenantsRes.data)
-    if (devicesRes.data) setDevicesList(devicesRes.data)
-  }
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
 
   const handleLogin = async (e) => {
-    e.preventDefault(); setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) alert(error.message)
-    setLoading(false)
-  }
-
-  const handleCreateTenant = async (e) => {
     e.preventDefault()
-    const { error } = await supabase.from('tenants').insert([{ ruc: tenantForm.ruc, business_name: tenantForm.name, legal_rep_email: tenantForm.email }])
-    if (error) alert(error.message); else { alert('✅ Cliente creado'); setTenantForm({ ruc: '', name: '', email: '' }); fetchData() }
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (error) throw error
+    } catch (err) {
+      setError(err.message === "Invalid login credentials" 
+        ? "Correo o contraseña incorrectos" 
+        : err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const handleRegisterDevice = async (e) => {
-    e.preventDefault()
-    const { error } = await supabase.from('biometric_devices').insert([{ serial_number: deviceForm.serial, name: deviceForm.name, tenant_id: deviceForm.tenantId, status: 'authorized' }])
-    if (error) alert(error.message); else { alert('✅ Dispositivo vinculado'); setDeviceForm({ serial: '', name: '', tenantId: '' }); fetchData() }
-  }
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-indigo-900 p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md backdrop-blur-sm bg-opacity-95">
+        <div className="flex justify-center mb-6">
+          <div className="p-4 bg-indigo-50 rounded-full">
+            <Shield className="w-10 h-10 text-indigo-600" />
+          </div>
+        </div>
+        
+        <h2 className="text-3xl font-bold text-center text-slate-800 mb-2">CEREBRO SaaS</h2>
+        <p className="text-center text-slate-500 mb-8">Acceso Seguro Administrativo</p>
 
-  if (!session) return (
-    <div className="flex h-screen items-center justify-center bg-slate-100 font-sans">
-      <div className="w-full max-w-md bg-white p-8 rounded-2xl shadow-xl">
-        <div className="text-center mb-8"><div className="inline-flex p-4 bg-indigo-600 rounded-full text-white mb-4"><Lock size={32} /></div><h1 className="text-2xl font-bold text-slate-800">CEREBRO ADMIN</h1></div>
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-3 border border-red-100">
+            <AlertCircle size={20} />
+            <span>{error}</span>
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-5">
-          <input type="email" required className="w-full p-3 border rounded-xl" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="admin@roberleon.com" />
-          <input type="password" required className="w-full p-3 border rounded-xl" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
-          <button disabled={loading} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition">{loading ? '...' : 'Entrar'}</button>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Correo Electrónico</label>
+            <input
+              type="email"
+              required
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-slate-50 focus:bg-white"
+              placeholder="admin@juvo.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-slate-700 mb-2">Contraseña</label>
+            <input
+              type="password"
+              required
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-slate-50 focus:bg-white"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3.5 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 active:scale-[0.98] transition flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed shadow-lg shadow-indigo-200"
+          >
+            {loading ? <Loader className="animate-spin" size={20} /> : <><Lock size={18} /> Iniciar Sesión</>}
+          </button>
         </form>
       </div>
     </div>
   )
-
-  return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
-      <aside className="w-64 bg-[#0f172a] text-white p-6 flex flex-col shadow-2xl">
-        <h1 className="text-xl font-bold mb-10 tracking-wider flex items-center gap-2 text-indigo-400"><LayoutDashboard /> CEREBRO</h1>
-        <nav className="space-y-2 flex-1">
-          {['dashboard', 'tenants', 'devices'].map(tab => (
-            <button key={tab} onClick={() => setActiveTab(tab)} className={`flex items-center space-x-3 w-full p-3 rounded-lg transition ${activeTab === tab ? 'bg-indigo-600 shadow-lg' : 'hover:bg-white/10 text-slate-400 hover:text-white'}`}>
-              {tab === 'dashboard' && <Activity size={20} />} {tab === 'tenants' && <Building size={20} />} {tab === 'devices' && <Server size={20} />}
-              <span className="capitalize">{tab === 'tenants' ? 'Clientes' : tab === 'devices' ? 'Biométricos' : 'Métricas'}</span>
-            </button>
-          ))}
-        </nav>
-        <button onClick={() => supabase.auth.signOut()} className="mt-auto flex items-center space-x-3 w-full p-3 rounded-lg hover:bg-red-500/10 text-red-400 transition"><LogOut size={20} /> <span>Salir</span></button>
-      </aside>
-
-      <main className="flex-1 p-8 overflow-y-auto">
-        <header className="mb-8"><h2 className="text-2xl font-bold text-slate-800 capitalize">{activeTab === 'tenants' ? 'Gestión de Clientes' : activeTab === 'devices' ? 'Inventario Hardware' : 'Panel de Control'}</h2><p className="text-sm text-slate-500">Usuario: {session.user.email}</p></header>
-        
-        {activeTab === 'dashboard' && (
-          <div className="animate-fadeIn">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              {[{l:'Clientes',v:tenantsList.length, c:'text-indigo-600'}, {l:'Activos',v:devicesList.filter(d=>d.status==='authorized').length, c:'text-emerald-500'}, {l:'Alertas',v:devicesList.filter(d=>d.status==='revoked').length, c:'text-red-500'}].map((m,i)=>(
-                <div key={i} className="bg-white p-6 rounded-2xl shadow-sm border"><p className="text-xs font-bold text-slate-400 uppercase">{m.l}</p><p className={`text-3xl font-extrabold mt-2 ${m.c}`}>{m.v}</p></div>
-              ))}
-            </div>
-            <MetricsChart devices={devicesList} />
-          </div>
-        )}
-
-        {activeTab === 'tenants' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border"><h3 className="font-bold text-slate-700 mb-4 flex gap-2"><PlusCircle className="text-indigo-600"/> Nuevo Cliente</h3>
-              <form onSubmit={handleCreateTenant} className="grid md:grid-cols-3 gap-4">
-                <input className="p-3 border rounded-lg" placeholder="Razón Social" value={tenantForm.name} onChange={e => setTenantForm({...tenantForm, name: e.target.value})} required />
-                <input className="p-3 border rounded-lg" placeholder="RUC" value={tenantForm.ruc} onChange={e => setTenantForm({...tenantForm, ruc: e.target.value})} required />
-                <input className="p-3 border rounded-lg" placeholder="Email" value={tenantForm.email} onChange={e => setTenantForm({...tenantForm, email: e.target.value})} required />
-                <button className="bg-indigo-600 text-white font-bold py-3 rounded-lg md:col-span-3 hover:bg-indigo-700">Registrar</button>
-              </form>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-              <table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="p-4">Empresa</th><th className="p-4">RUC</th><th className="p-4">ID (UUID)</th></tr></thead>
-                <tbody className="divide-y divide-slate-100">{tenantsList.map(t=>(<tr key={t.id} className="hover:bg-slate-50"><td className="p-4 font-medium">{t.business_name}</td><td className="p-4">{t.ruc}</td><td className="p-4 font-mono text-xs text-slate-400 select-all">{t.id}</td></tr>))}</tbody></table>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'devices' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border"><h3 className="font-bold text-slate-700 mb-4 flex gap-2"><Fingerprint className="text-indigo-600"/> Autorizar Hardware</h3>
-              <form onSubmit={handleRegisterDevice} className="grid md:grid-cols-3 gap-4">
-                <input className="p-3 border rounded-lg" placeholder="Serial (SN)" value={deviceForm.serial} onChange={e => setDeviceForm({...deviceForm, serial: e.target.value})} required />
-                <input className="p-3 border rounded-lg" placeholder="Nombre" value={deviceForm.name} onChange={e => setDeviceForm({...deviceForm, name: e.target.value})} />
-                <input className="p-3 border rounded-lg font-mono text-xs" placeholder="UUID Cliente" value={deviceForm.tenantId} onChange={e => setDeviceForm({...deviceForm, tenantId: e.target.value})} required />
-                <button className="bg-indigo-600 text-white font-bold py-3 rounded-lg md:col-span-3 hover:bg-indigo-700">Vincular</button>
-              </form>
-            </div>
-            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-              <table className="w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="p-4">Serial</th><th className="p-4">Nombre</th><th className="p-4">Cliente</th><th className="p-4">Estado</th></tr></thead>
-                <tbody className="divide-y divide-slate-100">{devicesList.map(d=>(<tr key={d.id} className="hover:bg-slate-50"><td className="p-4 font-mono font-bold">{d.serial_number}</td><td className="p-4">{d.name}</td><td className="p-4 text-indigo-600">{d.tenants?.business_name}</td><td className="p-4"><span className={`px-2 py-1 rounded-full text-xs font-bold ${d.status==='authorized'?'bg-green-100 text-green-700':'bg-red-100 text-red-700'}`}>{d.status}</span></td></tr>))}</tbody></table>
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
-  )
 }
+
+// --- 5. APP PRINCIPAL (LÓGICA MAESTRA) ---
+function App() {
+  const [session, setSession] = useState(null)
+  const [role, setRole] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  // Función segura para obtener rol sin errores de Schema
+  const fetchUserRole = async (userId) => {
+    try {
+      console.log("🔍 Buscando rol para:", userId)
+      
+      const { data, error } = await supabase
+        .from('internal_profiles')
+        .select('role')
+        .eq('id', userId)
+        .maybeSingle() 
+
+      if (error) {
+        console.error("⚠️ Error SQL:", error.message)
+        setRole('user') 
+      } else if (!data) {
+        console.warn("⚠️ Sin perfil")
+        setRole('user')
+      } else {
+        console.log("✅ Rol encontrado:", data.role)
+        setRole(data.role)
+      }
+    } catch (err) {
+      console.error("❌ Error inesperado:", err)
+      setRole('user')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session)
+      if (session) fetchUserRole(session.user.id)
+      else setLoading(false)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      if (session) {
+        setRole(null) // Resetear rol mientras cargamos
+        fetchUserRole(session.user.id)
+      } else {
+        setRole(null)
+        setLoading(false)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    setRole(null)
+    setSession(null)
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
+        <p className="text-slate-500 font-medium animate-pulse">Cargando CEREBRO...</p>
+      </div>
+    )
+  }
+
+  if (!session) return <LoginScreen />
+
+  // AQUÍ ESTÁ LA MAGIA: Usamos el AdminDashboard importado
+  switch (role) {
+    case 'admin':
+      return <AdminDashboard session={session} onLogout={handleLogout} />
+    case 'assistant':
+      return <AssistantDashboard session={session} onLogout={handleLogout} />
+    default:
+      return <UserDashboard session={session} onLogout={handleLogout} />
+  }
+}
+
 export default App
