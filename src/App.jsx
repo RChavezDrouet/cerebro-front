@@ -1,216 +1,492 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { Shield, Lock, Loader, AlertCircle, UserCheck, LogOut } from 'lucide-react'
+import { 
+  // Iconos para la interfaz
+  Shield, 
+  Lock, 
+  Mail, 
+  Loader, 
+  AlertCircle, 
+  ArrowRight, 
+  Fingerprint, 
+  CheckCircle,
+  Activity,
+  LayoutDashboard
+} from 'lucide-react'
 
-// --- 1. IMPORTAR DASHBOARD REAL ---
-// (Asegúrate de que src/components/AdminDashboard.jsx exista)
+// ==============================================================================
+// 1. IMPORTACIÓN DE PANELES (DASHBOARDS)
+// ==============================================================================
 import AdminDashboard from './components/AdminDashboard'
+import AssistantDashboard from './components/AssistantDashboard'
 
-// --- 2. CONFIGURACIÓN DE SUPABASE ---
+// ==============================================================================
+// 2. CONFIGURACIÓN DE SUPABASE
+// ==============================================================================
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 const supabase = createClient(supabaseUrl, supabaseKey)
 
-// --- 3. COMPONENTES TEMPORALES (Para roles que aún no construimos) ---
+// ==============================================================================
+// 3. COMPONENTE PRINCIPAL (APP)
+// ==============================================================================
+export default function App() {
+  
+  // ----------------------------------------------------------------------------
+  // ESTADOS DE LA APLICACIÓN
+  // ----------------------------------------------------------------------------
 
-const AssistantDashboard = ({ session, onLogout }) => (
-  <div className="p-10 bg-slate-50 min-h-screen">
-    <div className="max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-slate-800">Panel de Asistente</h1>
-        <button onClick={onLogout} className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200">
-          <LogOut size={18} /> Salir
-        </button>
-      </div>
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-        <h2 className="text-xl font-semibold mb-2 text-purple-600">Módulo de Cobranzas</h2>
-        <p>Este módulo está en construcción. Aquí verás la gestión de facturas.</p>
-      </div>
-    </div>
-  </div>
-)
-
-const UserDashboard = ({ session, onLogout }) => (
-  <div className="min-h-screen flex items-center justify-center bg-slate-100">
-    <div className="text-center p-8 bg-white rounded-xl shadow-lg border border-slate-200">
-      <div className="inline-block p-3 bg-slate-100 rounded-full mb-4">
-        <UserCheck className="w-8 h-8 text-slate-600" />
-      </div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-2">Cuenta de Usuario</h1>
-      <p className="text-slate-500 mb-6">No tienes permisos administrativos asignados.</p>
-      <button onClick={onLogout} className="px-6 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-900 transition">
-        Cerrar Sesión
-      </button>
-    </div>
-  </div>
-)
-
-// --- 4. PANTALLA DE LOGIN ---
-const LoginScreen = () => {
+  // Estado de Sesión y Permisos
+  const [session, setSession] = useState(null)
+  const [userRole, setUserRole] = useState(null) 
+  
+  // Estado de Carga Global (Pantalla negra inicial)
+  const [loading, setLoading] = useState(true)
+  const [loadingStatus, setLoadingStatus] = useState('Iniciando sistema...')
+  
+  // Estado de Carga del Botón de Login
+  const [loginLoading, setLoginLoading] = useState(false)
+  
+  // Estados del Formulario
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [errorMsg, setErrorMsg] = useState(null)
 
-  const handleLogin = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-    
-    try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      if (error) throw error
-    } catch (err) {
-      setError(err.message === "Invalid login credentials" 
-        ? "Correo o contraseña incorrectos" 
-        : err.message)
-    } finally {
-      setLoading(false)
-    }
+  // Estado de Identidad Corporativa (Branding)
+  const [branding, setBranding] = useState({
+    company_name: 'CEREBRO SaaS',
+    company_logo: null,
+    primary_color: '#4F46E5' // Color Indigo por defecto
+  })
+
+  // ----------------------------------------------------------------------------
+  // FUNCIONES DE SOPORTE (LÓGICA DE NEGOCIO)
+  // ----------------------------------------------------------------------------
+
+  /**
+   * Función segura para obtener el rol del usuario.
+   * Incluye un "Timeout" para evitar que el sistema se congele si la BD está lenta.
+   */
+  const fetchUserRoleSafely = async (userEmail) => {
+      try {
+          console.log(`🔍 Buscando rol para: ${userEmail}...`)
+          
+          // 1. Creamos una promesa de Timeout (4 segundos máximo)
+          const timeoutPromise = new Promise((resolve) => 
+              setTimeout(() => resolve({ timeout: true }), 4000)
+          );
+
+          // 2. Creamos la promesa de la Base de Datos
+          const dbPromise = supabase
+              .from('user_roles')
+              .select('role')
+              .eq('email', userEmail)
+              .maybeSingle();
+
+          // 3. Carrera: La que termine primero gana
+          const result = await Promise.race([dbPromise, timeoutPromise]);
+
+          // 4. Evaluar el resultado
+          if (result?.timeout) {
+              console.warn("⚠️ Tiempo de espera agotado al buscar rol.");
+              // Fallback de seguridad si hay timeout
+              return userEmail.includes('admin') ? 'admin' : 'assistant';
+          }
+
+          const { data, error } = result || {};
+
+          if (error) {
+              console.error("❌ Error en consulta de roles:", error);
+              throw error;
+          }
+
+          if (data && data.role) {
+              console.log("✅ Rol confirmado:", data.role);
+              return data.role;
+          } else {
+              console.warn("⚠️ Usuario sin rol explícito. Asignando rol por defecto.");
+              // Lógica de respaldo por Email (Hardcoded para emergencias)
+              if (userEmail.includes('admin') || userEmail === 'raul@juvo.com') {
+                  return 'admin';
+              } else {
+                  return 'assistant';
+              }
+          }
+      } catch (e) {
+          console.error("Excepción crítica en roles:", e);
+          // Último recurso para no bloquear la app
+          return 'assistant';
+      }
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-indigo-900 p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md backdrop-blur-sm bg-opacity-95">
-        <div className="flex justify-center mb-6">
-          <div className="p-4 bg-indigo-50 rounded-full">
-            <Shield className="w-10 h-10 text-indigo-600" />
-          </div>
-        </div>
+  /**
+   * Carga la configuración visual (Logo y Nombre) desde la base de datos.
+   */
+  const fetchBranding = async () => {
+      try {
+          const { data } = await supabase.from('app_settings').select('*').single()
+          if (data) {
+              setBranding({
+                  company_name: data.company_name || 'CEREBRO SaaS',
+                  company_logo: data.company_logo || null,
+                  primary_color: data.primary_color || '#4F46E5'
+              })
+              // Actualizar título del navegador
+              document.title = `${data.company_name} - Acceso`
+          }
+      } catch (e) { 
+          // Fallo silencioso (usa valores por defecto)
+      }
+  }
+
+  // ----------------------------------------------------------------------------
+  // EFECTOS (INICIALIZACIÓN)
+  // ----------------------------------------------------------------------------
+
+  useEffect(() => {
+    let mounted = true;
+
+    // Función de arranque secuencial
+    const init = async () => {
+        if (!mounted) return;
         
-        <h2 className="text-3xl font-bold text-center text-slate-800 mb-2">CEREBRO SaaS</h2>
-        <p className="text-center text-slate-500 mb-8">Acceso Seguro Administrativo</p>
+        setLoadingStatus('Estableciendo conexión segura...')
+        
+        // 1. Cargar Branding (Paralelo)
+        fetchBranding();
+        
+        // 2. Verificar Sesión Actual
+        const { data: { session: initSession } } = await supabase.auth.getSession();
+        
+        if (initSession && mounted) {
+            setLoadingStatus('Verificando permisos de acceso...');
+            setSession(initSession);
+            
+            // Buscar rol antes de quitar el loading
+            const role = await fetchUserRoleSafely(initSession.user.email);
+            if (mounted) setUserRole(role);
+        }
+        
+        // 3. Finalizar Carga
+        if (mounted) {
+            setLoading(false);
+            setLoadingStatus('');
+        }
+    }
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-3 border border-red-100">
-            <AlertCircle size={20} />
-            <span>{error}</span>
-          </div>
-        )}
+    init();
 
-        <form onSubmit={handleLogin} className="space-y-5">
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Correo Electrónico</label>
-            <input
-              type="email"
-              required
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-slate-50 focus:bg-white"
-              placeholder="admin@juvo.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Contraseña</label>
-            <input
-              type="password"
-              required
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition bg-slate-50 focus:bg-white"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3.5 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 active:scale-[0.98] transition flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed shadow-lg shadow-indigo-200"
-          >
-            {loading ? <Loader className="animate-spin" size={20} /> : <><Lock size={18} /> Iniciar Sesión</>}
-          </button>
-        </form>
+    // Listener para cambios de sesión (Login/Logout en otras pestañas o eventos)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+        if (!mounted) return;
+        
+        console.log("🔔 Evento Auth:", event);
+
+        if (event === 'SIGNED_OUT') {
+            setSession(null);
+            setUserRole(null);
+            setLoading(false);
+            setLoginLoading(false);
+            setEmail('');
+            setPassword('');
+        } 
+        else if (event === 'SIGNED_IN' && currentSession) {
+            // Nota: El manejo principal está en handleLogin para evitar parpadeos,
+            // pero esto sirve de respaldo si el login ocurre por otro medio.
+            setSession(currentSession);
+        }
+    });
+
+    return () => { 
+        mounted = false; 
+        subscription.unsubscribe(); 
+    }
+  }, []);
+
+  // ----------------------------------------------------------------------------
+  // HANDLERS (MANEJADORES DE EVENTOS)
+  // ----------------------------------------------------------------------------
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    
+    // Validación de campos vacíos
+    if (!email || !password) {
+        setErrorMsg("Por favor, ingrese correo y contraseña.");
+        return;
+    }
+
+    setLoginLoading(true);
+    setErrorMsg(null);
+
+    try {
+      // 1. Autenticar con Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({ 
+          email, 
+          password 
+      });
+      
+      if (error) throw error;
+
+      // 2. Si el login es exitoso, forzar la carga del rol INMEDIATAMENTE
+      // Esto evita que la pantalla se quede en "Verificando..." esperando el evento
+      if (data.session) {
+          setSession(data.session);
+          
+          // Mantenemos el estado de carga activo mientras buscamos el rol
+          const role = await fetchUserRoleSafely(data.session.user.email);
+          
+          // Actualizamos el rol y la sesión al mismo tiempo para disparar el cambio de vista
+          setUserRole(role);
+      }
+
+    } catch (error) {
+      console.error("Fallo en login:", error.message);
+      
+      // Mensajes de error amigables para el usuario
+      if (error.message.includes("Invalid")) {
+          setErrorMsg("Credenciales incorrectas. Intente nuevamente.");
+      } else if (error.message.includes("verified")) {
+          setErrorMsg("Su correo electrónico no ha sido verificado.");
+      } else {
+          setErrorMsg("Error de conexión con el servidor.");
+      }
+      
+      setLoginLoading(false); // Solo quitamos el spinner si falló
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+        setLoading(true);
+        setLoadingStatus('Cerrando sesión...');
+        await supabase.auth.signOut();
+        // El listener se encargará de limpiar el estado
+    } catch (error) {
+        console.error("Error al salir:", error);
+        setLoading(false);
+    }
+  };
+
+  // ----------------------------------------------------------------------------
+  // RENDERIZADO CONDICIONAL (VISTAS)
+  // ----------------------------------------------------------------------------
+
+  // VISTA 1: CARGA INICIAL (PANTALLA NEGRA)
+  if (loading) {
+    return (
+        <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0f172a] text-white gap-6 font-sans">
+            <div className="relative">
+                {/* Spinner animado */}
+                <div className="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin"></div>
+                {/* Icono central */}
+                <div className="absolute inset-0 flex items-center justify-center animate-pulse">
+                    <Activity size={20} className="text-indigo-400"/>
+                </div>
+            </div>
+            {/* Texto de estado */}
+            <div className="flex flex-col items-center gap-2">
+                <p className="text-sm font-bold tracking-widest text-slate-300 uppercase animate-pulse">
+                    Cargando Sistema
+                </p>
+                <p className="text-xs text-slate-500 font-mono">
+                    {loadingStatus}
+                </p>
+            </div>
+        </div>
+    )
+  }
+
+  // VISTA 2: PANELES DE CONTROL (DASHBOARDS)
+  // Si hay sesión y rol definido, mostramos el dashboard correspondiente
+  if (session && userRole) {
+      if (userRole === 'admin') {
+          return <AdminDashboard session={session} onLogout={handleLogout} />
+      }
+      
+      if (userRole === 'assistant') {
+          return <AssistantDashboard session={session} onLogout={handleLogout} />
+      }
+      
+      // Fallback para roles no implementados (Mantenimiento, etc.)
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4 font-sans">
+            <div className="bg-white p-8 rounded-2xl shadow-xl text-center max-w-sm w-full border border-slate-200">
+                <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Shield size={32} className="text-orange-500"/>
+                </div>
+                <h1 className="text-xl font-bold text-slate-800 mb-2">Acceso Limitado</h1>
+                <p className="text-slate-500 text-sm mb-6">
+                    Su rol actual ({userRole}) no tiene un panel asignado en esta versión.
+                </p>
+                <button 
+                    onClick={handleLogout} 
+                    className="w-full py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold transition-all"
+                >
+                    Cerrar Sesión
+                </button>
+            </div>
+        </div>
+      )
+  }
+
+  // VISTA 3: LOGIN (DISEÑO COMPACTO Y RESPONSIVE)
+  // Si no hay sesión, mostramos el formulario de login
+  return (
+    <div className="min-h-screen bg-[#0f172a] flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-indigo-500 selection:text-white">
+      
+      {/* Elementos Decorativos de Fondo (Glow) */}
+      <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none animate-pulse-slow"></div>
+      <div className="absolute bottom-[-20%] right-[-10%] w-[600px] h-[600px] bg-violet-600/10 rounded-full blur-[120px] pointer-events-none"></div>
+
+      {/* TARJETA DE LOGIN */}
+      {/* Max-width ajustado a 380px para ser compacto como pediste */}
+      <div className="bg-white w-full max-w-[380px] rounded-[24px] shadow-2xl relative overflow-hidden z-10 animate-fade-in-up border border-white/10">
+        
+        {/* Barra superior con gradiente */}
+        <div className="h-1.5 w-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+
+        <div className="p-8">
+            
+            {/* SECCIÓN 1: LOGO Y TÍTULO */}
+            <div className="flex flex-col items-center mb-8">
+                <div className="mb-5 relative group cursor-pointer perspective-1000">
+                    <div className="absolute inset-0 bg-indigo-100 rounded-2xl rotate-6 group-hover:rotate-12 transition-transform duration-500 ease-out"></div>
+                    <div className="relative bg-white p-3 rounded-2xl shadow-md border border-slate-50 group-hover:scale-105 transition-transform duration-300">
+                        {branding.company_logo ? (
+                            <img 
+                                src={branding.company_logo} 
+                                alt="Logo Empresa" 
+                                className="h-12 w-auto object-contain"
+                            />
+                        ) : (
+                            <Shield size={40} className="text-indigo-600" strokeWidth={1.5} />
+                        )}
+                    </div>
+                </div>
+                <h1 className="text-xl font-black text-slate-900 tracking-tight text-center leading-tight">
+                    {branding.company_name}
+                </h1>
+                <p className="text-slate-400 font-medium text-xs mt-1 flex items-center gap-1.5">
+                    <Lock size={10}/> Acceso Seguro Administrativo
+                </p>
+            </div>
+
+            {/* SECCIÓN 2: ALERTA DE ERROR */}
+            {errorMsg && (
+              <div className="mb-6 p-3 bg-rose-50 border border-rose-100 rounded-xl flex items-start gap-3 text-rose-600 text-xs font-bold animate-shake">
+                <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                <span className="leading-snug">{errorMsg}</span>
+              </div>
+            )}
+
+            {/* SECCIÓN 3: FORMULARIO */}
+            <form onSubmit={handleLogin} className="space-y-5">
+              
+              {/* CAMPO: EMAIL */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 flex items-center gap-1">
+                    Correo Electrónico
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-300">
+                    <Mail size={18} />
+                  </div>
+                  <input 
+                    type="email" 
+                    required 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 font-semibold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm" 
+                    placeholder="usuario@empresa.com"
+                  />
+                  {/* Indicador visual de email válido */}
+                  {email.includes('@') && (
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-emerald-500 animate-fade-in">
+                          <CheckCircle size={14} />
+                      </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CAMPO: CONTRASEÑA */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">
+                    Contraseña
+                </label>
+                <div className="relative group">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-500 transition-colors duration-300">
+                    <Lock size={18} />
+                  </div>
+                  <input 
+                    type="password" 
+                    required 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 font-semibold outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all shadow-sm" 
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+
+              {/* BOTÓN DE ACCIÓN */}
+              <button 
+                type="submit" 
+                disabled={loginLoading} 
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/30 transition-all active:scale-95 flex justify-center items-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed text-sm group mt-2"
+              >
+                {loginLoading ? (
+                    <>
+                        <Loader className="animate-spin" size={18} />
+                        <span className="animate-pulse">Verificando...</span>
+                    </>
+                ) : (
+                    <>
+                        <span>Iniciar Sesión</span>
+                        <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform"/>
+                    </>
+                )}
+              </button>
+            </form>
+
+            {/* PIE DE TARJETA */}
+            <div className="mt-8 text-center border-t border-slate-100 pt-5">
+              <p className="text-[9px] text-slate-400 font-medium uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-help opacity-70 hover:opacity-100 transition-opacity">
+                <Fingerprint size={12} />
+                Acceso restringido y monitoreado
+              </p>
+            </div>
+
+        </div>
       </div>
+      
+      {/* FOOTER GENERAL */}
+      <div className="absolute bottom-4 text-slate-600 text-[10px] font-medium text-center opacity-50 hover:opacity-100 transition-opacity cursor-default">
+        &copy; {new Date().getFullYear()} {branding.company_name}. <br/>Todos los derechos reservados.
+      </div>
+
+      {/* --- ESTILOS CSS INYECTADOS --- */}
+      <style>{`
+        @keyframes fade-in-up { 
+            from { opacity: 0; transform: translateY(15px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        } 
+        .animate-fade-in-up { 
+            animation: fade-in-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; 
+        }
+        @keyframes shake { 
+            0%, 100% { transform: translateX(0); } 
+            25% { transform: translateX(-2px); } 
+            75% { transform: translateX(2px); } 
+        }
+        .animate-shake { 
+            animation: shake 0.3s ease-in-out; 
+        }
+        .animate-pulse-slow {
+            animation: pulse 8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+      `}</style>
     </div>
   )
 }
 
-// --- 5. APP PRINCIPAL (LÓGICA MAESTRA) ---
-function App() {
-  const [session, setSession] = useState(null)
-  const [role, setRole] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  // Función segura para obtener rol sin errores de Schema
-  const fetchUserRole = async (userId) => {
-    try {
-      console.log("🔍 Buscando rol para:", userId)
-      
-      const { data, error } = await supabase
-        .from('internal_profiles')
-        .select('role')
-        .eq('id', userId)
-        .maybeSingle() 
-
-      if (error) {
-        console.error("⚠️ Error SQL:", error.message)
-        setRole('user') 
-      } else if (!data) {
-        console.warn("⚠️ Sin perfil")
-        setRole('user')
-      } else {
-        console.log("✅ Rol encontrado:", data.role)
-        setRole(data.role)
-      }
-    } catch (err) {
-      console.error("❌ Error inesperado:", err)
-      setRole('user')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      if (session) fetchUserRole(session.user.id)
-      else setLoading(false)
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-      if (session) {
-        setRole(null) // Resetear rol mientras cargamos
-        fetchUserRole(session.user.id)
-      } else {
-        setRole(null)
-        setLoading(false)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    setRole(null)
-    setSession(null)
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
-        <Loader className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
-        <p className="text-slate-500 font-medium animate-pulse">Cargando CEREBRO...</p>
-      </div>
-    )
-  }
-
-  if (!session) return <LoginScreen />
-
-  // AQUÍ ESTÁ LA MAGIA: Usamos el AdminDashboard importado
-  switch (role) {
-    case 'admin':
-      return <AdminDashboard session={session} onLogout={handleLogout} />
-    case 'assistant':
-      return <AssistantDashboard session={session} onLogout={handleLogout} />
-    default:
-      return <UserDashboard session={session} onLogout={handleLogout} />
-  }
-}
-
-export default App
