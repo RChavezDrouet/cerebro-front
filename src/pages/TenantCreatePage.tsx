@@ -89,57 +89,48 @@ export default function TenantCreatePage() {
       // - insertar tenant
       // - crear usuario auth del contacto
       // - enviar credenciales por SMTP
+      
+      // CORRECCIÓN: Enviamos el objeto "plano" (sin envolver en 'tenant') para evitar errores 400 en el backend
+      const payload = {
+        name: draft.name.trim(),
+        ruc: draft.ruc.replace(/\D/g, ''),
+        contact_email: draft.contact_email.trim(),
+        plan: draft.plan.trim(),
+        status: draft.status,
+        bio_serial: draft.bio_serial.trim() || null,
+        bio_location: draft.bio_location.trim() || null,
+        billing_period: draft.billing_period,
+        grace_days: Number(draft.grace_days || 0),
+        pause_after_grace: Boolean(draft.pause_after_grace),
+        courtesy_users: Number(draft.courtesy_users || 0),
+        courtesy_discount_pct: Number(draft.courtesy_discount_pct || 0),
+        courtesy_duration: draft.courtesy_duration,
+        courtesy_periods: Number(draft.courtesy_periods || 1),
+      }
+
       const { data, error } = await supabase.functions.invoke('admin-create-tenant', {
-        body: {
-          tenant: {
-            name: draft.name.trim(),
-            ruc: draft.ruc.replace(/\D/g, ''),
-            contact_email: draft.contact_email.trim(),
-            plan: draft.plan.trim(),
-            status: draft.status,
-            bio_serial: draft.bio_serial.trim() || null,
-            bio_location: draft.bio_location.trim() || null,
-            billing_period: draft.billing_period,
-            grace_days: Number(draft.grace_days || 0),
-            pause_after_grace: Boolean(draft.pause_after_grace),
-            courtesy_users: Number(draft.courtesy_users || 0),
-            courtesy_discount_pct: Number(draft.courtesy_discount_pct || 0),
-            courtesy_duration: draft.courtesy_duration,
-            courtesy_periods: Number(draft.courtesy_periods || 1),
-          },
-        },
+        body: payload,
       })
 
       if (error) {
+        console.error("Error en Edge Function, intentando fallback directo:", error)
+        
         // Fallback: insertar solo tenant (sin crear usuario ni email)
+        // Usamos exactamente los mismos datos del payload
         const { data: inserted, error: e2 } = await supabase
           .from('tenants')
-          .insert({
-            name: draft.name.trim(),
-            ruc: draft.ruc.replace(/\D/g, ''),
-            contact_email: draft.contact_email.trim(),
-            plan: draft.plan.trim(),
-            status: draft.status,
-            bio_serial: draft.bio_serial.trim() || null,
-            bio_location: draft.bio_location.trim() || null,
-            billing_period: draft.billing_period,
-            grace_days: Number(draft.grace_days || 0),
-            pause_after_grace: Boolean(draft.pause_after_grace),
-            courtesy_users: Number(draft.courtesy_users || 0),
-            courtesy_discount_pct: Number(draft.courtesy_discount_pct || 0),
-            courtesy_duration: draft.courtesy_duration,
-            courtesy_periods: Number(draft.courtesy_periods || 1),
-          })
+          .insert(payload)
           .select('*')
           .maybeSingle()
 
         if (e2) {
-          toast.error('No se pudo crear el cliente. Revisa RLS/migraciones.')
+          console.error("Error en Fallback SQL:", e2)
+          toast.error('No se pudo crear el cliente. Revisa consola para detalles (RLS/Columnas).')
           return
         }
 
         await logAuditEvent('TENANT_CREATED_FALLBACK', { tenant_id: inserted?.id, ruc: inserted?.ruc })
-        toast('Cliente creado, pero falta enviar credenciales (Edge Function admin-create-tenant).', { icon: '⚠️' })
+        toast('Cliente creado, pero falta enviar credenciales (Edge Function falló).', { icon: '⚠️' })
         navigate('/tenants')
         return
       }

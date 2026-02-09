@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-export default { content:['./index.html','./src/**/*.{js,jsx}'], theme:{extend:{}}, plugins:[] }
-=======
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -202,4 +199,3 @@ export default {
   },
   plugins: [],
 }
->>>>>>> 6d0d444 (Initial commit - Cerebro Front)

@@ -1,37 +1,11 @@
 {
   "name": "cerebro-front",
   "private": true,
-<<<<<<< HEAD
-  "version": "1.0.0",
-=======
   "version": "3.0.0",
->>>>>>> 6d0d444 (Initial commit - Cerebro Front)
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-<<<<<<< HEAD
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.93.3",
-    "@tanstack/react-table": "^8.11.0",
-    "date-fns": "^4.1.0",
-    "lucide-react": "^0.563.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-hot-toast": "^2.4.1",
-    "recharts": "^2.15.4",
-    "wouter": "^3.9.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.0.0",
-    "autoprefixer": "^10.4.24",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.19",
-    "vite": "^5.0.0",
-    "vite-plugin-pwa": "^0.17.0"
-=======
     "preview": "vite preview",
     "lint": "eslint . --ext js,jsx,ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest",
@@ -76,6 +50,5 @@
     "typescript": "^5.6.3",
     "vite": "^4.5.14",
     "vitest": "^1.6.1"
->>>>>>> 6d0d444 (Initial commit - Cerebro Front)
   }
 }

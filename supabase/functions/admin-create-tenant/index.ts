@@ -1,128 +1,129 @@
-import { corsHeaders, handleCors } from '../_shared/cors.ts'
-import { getAdminClient } from '../_shared/supabaseAdmin.ts'
-import { isValidEmail, sendEmail } from '../_shared/smtp.ts'
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { corsHeaders } from '../_shared/cors.ts'
 
-type Payload = {
-  name?: string
-  ruc?: string
+// 1. ACTUALIZAMOS LA INTERFAZ (Para que acepte los nuevos campos)
+interface TenantPayload {
+  name: string
+  slug?: string
   contact_email?: string
   plan?: string
-  status?: 'active' | 'trial' | 'paused'
+  ruc?: string
   bio_serial?: string
-  bio_location?: string
-  billing_period?: string
-  grace_days?: number
-  pause_after_grace?: boolean
-  courtesy_users?: number
-  courtesy_discount_pct?: number
-  courtesy_duration?: string
-  courtesy_periods?: number
-  create_auth_user?: boolean
+  bio_location?: string;
+  billing_period?: string;
+  grace_days?: number;
+  pause_after_grace?: boolean;
 }
 
-function randPassword(len = 14) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%*_-'
-  let out = ''
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)]
-  return out
-}
-
-Deno.serve(async (req) => {
-  const cors = handleCors(req)
-  if (cors) return cors
+serve(async (req) => {
+  // Manejo de CORS (Preflight)
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
 
   try {
-    const p = (await req.json()) as Payload
-    const name = String(p.name || '').trim()
-    const ruc = String(p.ruc || '').trim()
-    const contact_email = String(p.contact_email || '').trim().toLowerCase()
-    const plan = String(p.plan || 'basic').trim()
-    const status = (p.status || 'active') as any
+    // Instanciar cliente de Supabase (Service Role - Bypasses RLS)
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
 
-    if (!name || !ruc) {
-      return new Response(JSON.stringify({ error: 'name/ruc requerido' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-    if (!isValidEmail(contact_email)) {
-      return new Response(JSON.stringify({ error: 'contact_email inválido' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    // Verificación de Seguridad: Token del usuario
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      throw new Error('Falta cabecera de autorización')
     }
 
-    const supabase = getAdminClient()
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(token)
 
-    const { data: inserted, error: insErr } = await supabase
+    if (userError || !user) {
+      return new Response(JSON.stringify({ error: 'Token inválido o expirado' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Verificar si es Admin en la DB
+    const { data: profile } = await supabaseAdmin
+      .from('internal_profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    // Nota: Si el perfil no existe, profile será null.
+    if (!profile || profile.role !== 'admin') {
+      return new Response(JSON.stringify({ error: 'No autorizado: Se requiere nivel Admin' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // 2. EXTRAER TODOS LOS DATOS NUEVOS DEL BODY
+    const body = await req.json() as TenantPayload
+    const { 
+      name, 
+      slug, 
+      contact_email, 
+      plan, 
+      ruc, 
+      bio_serial, 
+      bio_location, 
+      billing_period, 
+      grace_days, 
+      pause_after_grace 
+    } = body
+
+    if (!name) {
+      return new Response(JSON.stringify({ error: 'El nombre del cliente es obligatorio' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Generar slug
+    const finalSlug = slug || name.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w\-]+/g, '')
+
+    // 3. INSERTAR CON TODOS LOS CAMPOS
+    const { data, error: insertError } = await supabaseAdmin
       .from('tenants')
-      .insert({
-        name,
-        ruc,
-        contact_email,
-        plan,
-        status,
-        bio_serial: p.bio_serial ?? null,
-        bio_location: p.bio_location ?? null,
-        billing_period: p.billing_period ?? 'monthly',
-        grace_days: Number(p.grace_days || 0),
-        pause_after_grace: Boolean(p.pause_after_grace ?? true),
-        courtesy_users: Number(p.courtesy_users || 0),
-        courtesy_discount_pct: Number(p.courtesy_discount_pct || 0),
-        courtesy_duration: p.courtesy_duration ?? 'one_time',
-        courtesy_periods: Number(p.courtesy_periods || 1),
-      })
-      .select('id')
-      .maybeSingle()
-    if (insErr) throw insErr
+      .insert([
+        {
+          name,
+          slug: finalSlug,
+          contact_email,
+          plan: plan || 'basic',
+          status: 'active',
+          // Campos nuevos agregados:
+          ruc: ruc || null,
+          bio_serial: bio_serial || null,
+          bio_location: bio_location || null,
+          billing_period: billing_period || 'monthly',
+          grace_days: grace_days ?? 5,
+          pause_after_grace: pause_after_grace ?? false
+        }
+      ])
+      .select()
+      .single()
 
-    const tenant_id = inserted?.id
-
-    // Opcional: crea un usuario Auth para el contacto (NO es interno, no se inserta en user_roles)
-    let temp_password: string | null = null
-    if (p.create_auth_user !== false) {
-      temp_password = randPassword()
-      await supabase.auth.admin.createUser({
-        email: contact_email,
-        password: temp_password,
-        email_confirm: true,
-        user_metadata: { tenant_id, tenant_name: name, type: 'tenant_contact' },
-      })
-
-      // Email de credenciales (requiere SMTP global configurado)
-      try {
-        await sendEmail({
-          to: contact_email,
-          subject: `Cerebro | Alta de inquilino (${name})`,
-          html: `<div style="font-family:system-ui;line-height:1.4">
-            <h2>Tenant creado</h2>
-            <p>Se creó el inquilino <b>${escapeHtml(name)}</b> con RUC <b>${escapeHtml(ruc)}</b>.</p>
-            <p><b>Usuario:</b> ${escapeHtml(contact_email)}<br/>
-               <b>Password temporal:</b> ${escapeHtml(temp_password)}</p>
-            <p style="color:#64748b;font-size:12px">Si no corresponde, ignore este correo.</p>
-          </div>`,
-        })
-      } catch {
-        // no bloquea la creación
+    if (insertError) {
+      console.error("Error al insertar tenant:", insertError) // Para ver en logs de Supabase
+      if (insertError.code === '23505') {
+        throw new Error(`El slug '${finalSlug}' ya existe. Usa otro nombre.`)
       }
+      throw insertError
     }
 
-    return new Response(JSON.stringify({ ok: true, tenant_id, temp_password }), {
+    return new Response(JSON.stringify({ success: true, data }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
     })
-  } catch (e) {
-    return new Response(JSON.stringify({ error: (e as any)?.message || 'Error' }), {
-      status: 500,
+
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 })
-
-function escapeHtml(s: string) {
-  return String(s)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;')
-}
