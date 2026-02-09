@@ -1,23 +1,5 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-<<<<<<< HEAD
-
-export default defineConfig({
-  plugins: [react()],
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (id.includes('node_modules')) {
-            return 'vendor';
-          }
-        },
-      },
-    },
-    chunkSizeWarningLimit: 1000,
-  },
-})
-=======
 import path from 'path'
 
 // https://vitejs.dev/config/
@@ -54,6 +36,7 @@ export default defineConfig({
         },
       },
     },
+    chunkSizeWarningLimit: 1000,
   },
   test: {
     globals: true,
@@ -61,4 +44,3 @@ export default defineConfig({
     setupFiles: './src/test/setup.js',
   },
 })
->>>>>>> 6d0d444 (Initial commit - Cerebro Front)
