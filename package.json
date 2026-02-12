@@ -1,71 +1,8 @@
 {
-<<<<<<< HEAD
-  "name": "cerebro-front",
+  "name": "hrcloud-monorepo",
   "private": true,
-  "version": "3.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "lint": "eslint . --ext js,jsx,ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "test": "vitest",
-    "test:ui": "vitest --ui",
-    "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "dependencies": {
-    "@hookform/resolvers": "^3.10.0",
-    "@supabase/supabase-js": "^2.94.1",
-    "clsx": "^2.0.0",
-    "date-fns": "^2.30.0",
-    "lucide-react": "^0.309.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-hook-form": "^7.47.0",
-    "react-hot-toast": "^2.6.0",
-    "react-router-dom": "^6.20.0",
-    "recharts": "^2.10.0",
-    "zod": "^3.25.76",
-    "zxcvbn": "^4.4.2"
-  },
-  "devDependencies": {
-    "@testing-library/jest-dom": "^6.4.8",
-    "@testing-library/react": "^16.1.0",
-    "@testing-library/user-event": "^14.5.2",
-    "@types/react": "^18.2.15",
-    "@types/react-dom": "^18.2.7",
-    "@vitejs/plugin-react": "^4.7.0",
-    "@vitest/coverage-v8": "^1.6.1",
-    "@vitest/ui": "^1.6.1",
-    "autoprefixer": "^10.4.24",
-    "eslint": "^8.45.0",
-    "eslint-plugin-react": "^7.32.2",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.3",
-    "jsdom": "^24.1.0",
-    "postcss": "^8.5.6",
-    "supabase": "^2.76.3",
-    "tailwindcss": "^3.4.19",
-    "terser": "^5.46.0",
-    "typescript": "^5.6.3",
-    "vite": "^4.5.14",
-    "vitest": "^1.6.1"
-=======
-  "name": "hrcloud-adms-gateway",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "dev": "node src/index.js",
-    "start": "node src/index.js"
-  },
-  "dependencies": {
-    "@supabase/supabase-js": "^2.57.2",
-    "dotenv": "^16.4.5",
-    "express": "^4.21.2",
-    "luxon": "^3.5.0",
-    "morgan": "^1.10.0"
->>>>>>> 27d02b9 (Initial commit)
+  "version": "1.0.0",
+  "engines": {
+    "node": "20.x"
   }
 }
