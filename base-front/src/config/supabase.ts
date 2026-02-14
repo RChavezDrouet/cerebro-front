@@ -1,25 +1,22 @@
 // src/config/supabase.ts
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { ENV } from '@/lib/env'
 
 /**
  * =========================================================
  * Supabase Client (Base)
  * =========================================================
  * - Cliente principal: supabase (schema por defecto: public)
- * - Cliente de schema attendance: attendanceDb (para evitar 400 por schema equivocado)
+ * - Cliente schema attendance: attendanceDb (evita 400 por schema equivocado)
+ * - Debug DEV: window.supabase (para consola)
  * =========================================================
  */
 
-const SUPABASE_URL = ENV.SUPABASE_URL()
-const SUPABASE_ANON_KEY = ENV.SUPABASE_ANON_KEY()
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  // Esto te ayuda a detectar problemas de .env en DO/local
-  // (en runtime en Vite: import.meta.env)
-  // No uses process.env aquí.
   throw new Error(
-    '[supabase] Faltan variables de entorno: SUPABASE_URL / SUPABASE_ANON_KEY'
+    '[supabase] Faltan variables VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY. Revisa .env/.env.local y reinicia Vite.'
   )
 }
 
@@ -35,14 +32,12 @@ export const supabase: SupabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON
  * Cliente “fijado” al schema attendance.
  * Úsalo así:
  *   await attendanceDb.from('turns').insert(...)
- *   await attendanceDb.rpc('debug_auth_context')
- *
- * Esto evita que el app pegue a /rest/v1/turns (public) por error.
+ *   await attendanceDb.from('employees').select(...)
  */
 export const attendanceDb = supabase.schema('attendance')
 
 /**
- * Tipos usados en tenant gate (si aplica)
+ * Tipo usado por Tenant Gate (si aplica)
  */
 export type TenantGate = {
   id: string
@@ -51,9 +46,12 @@ export type TenantGate = {
 }
 
 /**
- * SOLO para depuración local (no afecta producción)
- * Permite ejecutar en consola:
- *   await window.supabase.schema('attendance').rpc('debug_auth_context')
+ * =========================================================
+ * DEV ONLY: acceso a supabase desde consola del navegador
+ * =========================================================
+ * En consola:
+ *   window.supabase.auth.getSession().then(console.log)
+ *   window.supabase.schema('attendance').from('turns').select('*').then(console.log)
  */
 declare global {
   interface Window {
