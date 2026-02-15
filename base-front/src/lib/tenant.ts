@@ -1,5 +1,4 @@
 import { supabase, type TenantGate } from '@/config/supabase'
-import { ENV } from '@/lib/env'
 
 /**
  * Resuelve el tenant_id del usuario logueado.
@@ -7,16 +6,16 @@ import { ENV } from '@/lib/env'
  * Orden de resolución:
  * 1) user_metadata.tenant_id (si existe)
  * 2) attendance.my_memberships (si existe)
- * 3) public.profiles (tabla configurable) usando profiles.id = auth.users.id  ✅ (tu caso real)
- * 4) fallback: profiles.user_id (compatibilidad con otros esquemas)
+ * 3) public.profiles por id = auth.users.id   ✅ (tu caso real)
+ * 4) fallback: public.profiles.user_id (compatibilidad)
  */
 export async function resolveTenantId(userId: string): Promise<string | null> {
   // 1) Metadata del usuario (si existe)
   const { data: userRes } = await supabase.auth.getUser()
   const metaTenant = (userRes.user?.user_metadata as any)?.tenant_id
-  if (typeof metaTenant === 'string' && metaTenant.length > 0) return metaTenant
+  if (typeof metaTenant === 'string' && metaTenant.trim().length > 0) return metaTenant.trim()
 
-  // 2) Schema attendance: my_memberships
+  // 2) Schema attendance: my_memberships (si existe)
   try {
     const { data: m, error: mErr } = await supabase
       .schema('attendance')
@@ -30,13 +29,10 @@ export async function resolveTenantId(userId: string): Promise<string | null> {
     // ignore
   }
 
-  // 3) Fallback: public.profiles (o tabla configurada)
-  const profilesTable = ENV.PROFILES_TABLE
-
-  // ✅ TU CASO REAL: public.profiles.id = auth.users.id
+  // 3) public.profiles (tu esquema real: profiles.id = auth.users.id)
   {
     const { data, error } = await supabase
-      .from(profilesTable)
+      .from('profiles')
       .select('tenant_id')
       .eq('id', userId)
       .maybeSingle()
@@ -44,10 +40,10 @@ export async function resolveTenantId(userId: string): Promise<string | null> {
     if (!error && (data as any)?.tenant_id) return (data as any).tenant_id as string
   }
 
-  // Compatibilidad: algunos esquemas usan profiles.user_id
+  // 4) Compatibilidad: profiles.user_id (si algún día cambias la estructura)
   {
     const { data, error } = await supabase
-      .from(profilesTable)
+      .from('profiles')
       .select('tenant_id')
       .eq('user_id', userId)
       .maybeSingle()
@@ -58,15 +54,23 @@ export async function resolveTenantId(userId: string): Promise<string | null> {
   return null
 }
 
+/**
+ * Tenant gate (estado active/paused).
+ *
+ * Nota: en tu tabla public.tenants NO existe paused_message, por eso solo consultamos id,status.
+ */
 export async function fetchTenantGate(tenantId: string): Promise<TenantGate | null> {
-  const tenantsTable = ENV.TENANTS_TABLE
-
   const { data, error } = await supabase
-    .from(tenantsTable)
-    .select('id,status,paused_message')
+    .from('tenants')
+    .select('id,status')
     .eq('id', tenantId)
     .maybeSingle()
 
-  if (error) return null
+  if (error) {
+    // útil para debug en consola
+    console.error('fetchTenantGate error:', error)
+    return null
+  }
+
   return data as unknown as TenantGate
 }

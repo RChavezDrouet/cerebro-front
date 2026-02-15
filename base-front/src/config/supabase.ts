@@ -55,7 +55,7 @@ export type TenantGate = {
  */
 declare global {
   interface Window {
-    supabase?: SupabaseClient
+    supabase?: any
   }
 }
 

@@ -5,10 +5,12 @@ import { Button } from '@/components/Button'
 import { Input } from '@/components/Input'
 import { Select } from '@/components/Select'
 import { EmployeeSchema, type EmployeeForm } from './employeeSchemas'
+import { resolveTenantId } from '@/lib/tenant'
 
-type Turn = { id: string; name: string; type: string; is_active?: boolean }
+type Turn = { id: string; name: string; type: string; is_active?: boolean; tenant_id?: string }
 type Schedule = {
   id: string
+  tenant_id?: string
   name: string
   turn_id: string
   entry_time?: string | null
@@ -38,10 +40,11 @@ export default function EmployeeFormPage({ mode }: Props) {
   const [turns, setTurns] = React.useState<Turn[]>([])
   const [selectedTurnId, setSelectedTurnId] = React.useState<string>('')
 
-  const [schedules, setSchedules] = React.useState<Schedule[]>([]) // horarios del turno seleccionado
+  const [schedules, setSchedules] = React.useState<Schedule[]>([])
   const schedulesCache = React.useRef<Map<string, Schedule[]>>(new Map())
 
   const [attendanceMode, setAttendanceMode] = React.useState<'biometric' | 'web'>('biometric')
+  const [tenantId, setTenantId] = React.useState<string>('')
   const [err, setErr] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
 
@@ -54,17 +57,32 @@ export default function EmployeeFormPage({ mode }: Props) {
     biometric_employee_code: null
   })
 
+  async function getTenantId(): Promise<string> {
+    if (tenantId) return tenantId
+
+    const { data: s, error: sErr } = await supabase.auth.getSession()
+    const userId = s?.session?.user?.id
+    if (sErr || !userId) throw new Error('No hay sesión activa.')
+
+    const t = await resolveTenantId(userId)
+    if (!t) throw new Error(`tenant_id no resuelto para user_id=${userId}`)
+
+    setTenantId(t)
+    return t
+  }
+
   async function loadSchedulesForTurn(turnId: string) {
     if (!turnId) {
       setSchedules([])
       return
     }
 
-    // Cache (evita refetch innecesario)
+    const tId = await getTenantId()
+
+    // Cache por turnId (pero en multi-tenant, el turnId ya es del tenant filtrado)
     const cached = schedulesCache.current.get(turnId)
     if (cached) {
       setSchedules(cached)
-      // auto-fix schedule_id si no pertenece
       if (cached.length === 0) setForm((p) => ({ ...p, schedule_id: '' }))
       else if (!cached.some((x) => x.id === form.schedule_id)) setForm((p) => ({ ...p, schedule_id: cached[0].id }))
       return
@@ -73,7 +91,8 @@ export default function EmployeeFormPage({ mode }: Props) {
     const { data, error } = await supabase
       .schema('attendance')
       .from('schedules')
-      .select('id,name,turn_id,entry_time,exit_time,is_active')
+      .select('id,tenant_id,name,turn_id,entry_time,exit_time,is_active')
+      .eq('tenant_id', tId)
       .eq('is_active', true)
       .eq('turn_id', turnId)
       .order('name')
@@ -100,11 +119,14 @@ export default function EmployeeFormPage({ mode }: Props) {
     const load = async () => {
       setErr(null)
 
+      const tId = await getTenantId()
+
       // 1) Modo de marcación del tenant
       const { data: settings } = await supabase
         .schema('attendance')
         .from('settings')
         .select('mode')
+        .eq('tenant_id', tId)
         .limit(1)
         .maybeSingle()
 
@@ -112,11 +134,12 @@ export default function EmployeeFormPage({ mode }: Props) {
         setAttendanceMode((settings as any).mode)
       }
 
-      // 2) Turnos activos (NO se deshabilitan opciones)
+      // 2) Turnos activos del tenant
       const { data: turnsData, error: turnsErr } = await supabase
         .schema('attendance')
         .from('turns')
-        .select('id,name,type,is_active')
+        .select('id,tenant_id,name,type,is_active')
+        .eq('tenant_id', tId)
         .eq('is_active', true)
         .order('name')
 
@@ -141,6 +164,7 @@ export default function EmployeeFormPage({ mode }: Props) {
           .schema('attendance')
           .from('employees')
           .select('employee_code,first_name,last_name,status,schedule_id,biometric_employee_code')
+          .eq('tenant_id', tId)
           .eq('id', id)
           .maybeSingle()
 
@@ -160,11 +184,12 @@ export default function EmployeeFormPage({ mode }: Props) {
           biometric_employee_code: (emp as any).biometric_employee_code ?? null
         })
 
-        // Resolver turn_id del horario del empleado (query directa)
+        // Resolver turn_id del horario del empleado
         const { data: sch, error: schErr } = await supabase
           .schema('attendance')
           .from('schedules')
           .select('turn_id')
+          .eq('tenant_id', tId)
           .eq('id', scheduleId)
           .maybeSingle()
 
@@ -197,6 +222,8 @@ export default function EmployeeFormPage({ mode }: Props) {
   async function save() {
     setErr(null)
 
+    const tId = await getTenantId()
+
     if (!selectedTurnId) {
       setErr('Selecciona un turno.')
       return
@@ -215,6 +242,24 @@ export default function EmployeeFormPage({ mode }: Props) {
       }
     }
 
+    // ✅ Preflight: validar que el schedule_id realmente exista en DB (evita FK 23503)
+    const { data: schExists, error: schErr } = await supabase
+      .schema('attendance')
+      .from('schedules')
+      .select('id')
+      .eq('tenant_id', tId)
+      .eq('id', form.schedule_id)
+      .maybeSingle()
+
+    if (schErr) {
+      setErr(`No se pudo validar horario: ${schErr.message} (${schErr.code})`)
+      return
+    }
+    if (!schExists?.id) {
+      setErr('El horario seleccionado no existe (o no pertenece a tu tenant). Vuelve a seleccionar el horario.')
+      return
+    }
+
     const parsed = EmployeeSchema.safeParse(form)
     if (!parsed.success) {
       setErr(parsed.error.issues[0]?.message ?? 'Formulario inválido')
@@ -223,6 +268,7 @@ export default function EmployeeFormPage({ mode }: Props) {
 
     const payload: any = {
       ...parsed.data,
+      tenant_id: tId, // ✅ asegura multi-tenant correcto (y policies consistentes)
       employee_code: parsed.data.employee_code.trim(),
       first_name: parsed.data.first_name.trim(),
       last_name: parsed.data.last_name.trim(),
@@ -232,9 +278,20 @@ export default function EmployeeFormPage({ mode }: Props) {
     setLoading(true)
 
     if (mode === 'edit' && id) {
-      const { error } = await supabase.schema('attendance').from('employees').update(payload).eq('id', id)
+      const { error } = await supabase
+        .schema('attendance')
+        .from('employees')
+        .update(payload)
+        .eq('tenant_id', tId)
+        .eq('id', id)
+
       setLoading(false)
       if (error) {
+        // Mensaje específico FK schedule
+        if ((error as any)?.code === '23503' && String((error as any)?.message || '').includes('schedule')) {
+          setErr('No se pudo guardar: el horario seleccionado no existe (FK). Selecciona un horario válido.')
+          return
+        }
         setErr(`No se pudo guardar: ${error.message} (${error.code})`)
         return
       }
@@ -244,10 +301,16 @@ export default function EmployeeFormPage({ mode }: Props) {
 
     const { error } = await supabase.schema('attendance').from('employees').insert(payload)
     setLoading(false)
+
     if (error) {
+      if ((error as any)?.code === '23503' && String((error as any)?.message || '').includes('schedule')) {
+        setErr('No se pudo crear: el horario seleccionado no existe (FK). Selecciona un horario válido.')
+        return
+      }
       setErr(`No se pudo crear: ${error.message} (${error.code})`)
       return
     }
+
     navigate('/employees')
   }
 
@@ -273,7 +336,6 @@ export default function EmployeeFormPage({ mode }: Props) {
         <Input label="Nombres" value={form.first_name} onChange={(e) => setForm((s) => ({ ...s, first_name: e.target.value }))} />
         <Input label="Apellidos" value={form.last_name} onChange={(e) => setForm((s) => ({ ...s, last_name: e.target.value }))} />
 
-        {/* Turno: SIEMPRE seleccionable */}
         <Select label="Turno" value={selectedTurnId} onChange={(e) => void onChangeTurn(e.target.value)} disabled={turns.length === 0}>
           {turns.length === 0 ? <option value="">(No hay turnos activos)</option> : null}
           {turns.map((t) => (
@@ -283,7 +345,6 @@ export default function EmployeeFormPage({ mode }: Props) {
           ))}
         </Select>
 
-        {/* Horarios del turno seleccionado */}
         <Select
           label="Horario"
           value={form.schedule_id}
@@ -326,4 +387,5 @@ export default function EmployeeFormPage({ mode }: Props) {
     </div>
   )
 }
+
 
