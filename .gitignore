@@ -53,3 +53,4 @@ ssh key.txt
 **/.env
 **/.env.*
 !**/.env.example
+cerebro-front/
