@@ -2,7 +2,11 @@
   "name": "hrcloud-base-pwa",
   "private": true,
   "version": "4.7.0",
-  "type": "module",
+   "engines": {
+    "node": "20.x"
+     },
+    "type": "module",
+
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
