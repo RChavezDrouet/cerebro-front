@@ -1,0 +1,803 @@
+import React, { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import {
+  ArrowLeft,
+  Building2,
+  KeyRound,
+  Mail,
+  Save,
+  ShieldCheck,
+  User,
+  Phone,
+  FileText,
+  Cpu,
+} from 'lucide-react'
+import toast from 'react-hot-toast'
+import { supabase, logAuditEvent } from '../config/supabase'
+import { validateRUC } from '../utils/validators'
+
+type BillingPeriod = 'weekly' | 'biweekly' | 'monthly' | 'semiannual'
+type TenantStatus = 'active' | 'trial' | 'paused'
+type CourtesyDuration = 'one_time' | 'periods' | 'contract'
+
+type PlanOption = {
+  code: string
+  name?: string | null
+}
+
+type TenantDraft = {
+  business_name: string
+  ruc: string
+  admin_email: string
+  temp_password: string
+  plan_type: string
+  status: TenantStatus
+  contact_name: string
+  contact_email: string
+  contact_phone: string
+  legal_rep_name: string
+  legal_rep_email: string
+  notes: string
+  serial_numbers_text: string
+  bio_location: string
+  billing_period: BillingPeriod
+  grace_days: number
+  auto_suspend: boolean
+  pause_after_grace: boolean
+  courtesy_discount_pct: number
+  courtesy_duration: CourtesyDuration
+  courtesy_periods: number
+}
+
+const periodLabel = (p: BillingPeriod) =>
+  ({
+    weekly: 'Semanal',
+    biweekly: 'Quincenal',
+    monthly: 'Mensual',
+    semiannual: 'Semestral',
+  } as const)[p]
+
+const normalizeEmail = (value: string) => value.trim().toLowerCase()
+
+const isValidEmail = (value: string) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalizeEmail(value))
+
+const parseSerialNumbers = (value: string) => {
+  const items = value
+    .split(/[\n,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+
+  return Array.from(new Set(items))
+}
+
+
+const supabaseUrl = (import.meta as any)?.env?.VITE_SUPABASE_URL as string
+const supabaseAnonKey = (import.meta as any)?.env?.VITE_SUPABASE_ANON_KEY as string
+
+function tryParseJson(raw: string | null) {
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function extractAccessTokenFromStorage(): string | null {
+  const raws: string[] = []
+
+  try {
+    const preferred = window.localStorage.getItem('cerebro_auth')
+    if (preferred) raws.push(preferred)
+  } catch {
+    // no-op
+  }
+
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i)
+      if (!key) continue
+      if (key === 'cerebro_auth' || key.endsWith('-auth-token') || key.includes('auth-token')) {
+        const raw = window.localStorage.getItem(key)
+        if (raw) raws.push(raw)
+      }
+    }
+  } catch {
+    // no-op
+  }
+
+  for (const raw of raws) {
+    const parsed = tryParseJson(raw)
+    const token =
+      parsed?.access_token ||
+      parsed?.currentSession?.access_token ||
+      parsed?.session?.access_token ||
+      (Array.isArray(parsed) ? parsed.find((x: any) => x?.access_token)?.access_token : null)
+
+    if (typeof token === 'string' && token.trim()) return token.trim()
+  }
+
+  return null
+}
+
+async function invokeAdminCreateTenant(payload: Record<string, unknown>) {
+  const accessToken = extractAccessTokenFromStorage()
+  if (!accessToken) {
+    throw new Error('No hay sesión válida en CEREBRO. Cierra sesión y vuelve a ingresar.')
+  }
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Faltan VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY.')
+  }
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/admin-create-tenant`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      apikey: supabaseAnonKey,
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    let message = `admin-create-tenant devolvió ${response.status}`
+    try {
+      const data = await response.clone().json()
+      message = data?.error || data?.message || data?.details || message
+    } catch {
+      try {
+        const text = await response.text()
+        if (text?.trim()) message = text.trim()
+      } catch {
+        // no-op
+      }
+    }
+    throw new Error(message)
+  }
+
+  return await response.json()
+}
+
+async function extractFunctionError(error: unknown): Promise<string> {
+  const fallback = 'No se pudo crear el cliente.'
+
+  try {
+    const anyError = error as {
+      message?: string
+      context?: {
+        json?: () => Promise<any>
+        text?: () => Promise<string>
+        clone?: () => { json?: () => Promise<any>; text?: () => Promise<string> }
+      }
+    }
+
+    const response = anyError?.context
+    if (response?.clone) {
+      const clone = response.clone()
+      if (clone?.json) {
+        try {
+          const data = await clone.json()
+          const msg =
+            data?.error_description ||
+            data?.error ||
+            data?.message ||
+            data?.msg ||
+            data?.details
+          if (typeof msg === 'string' && msg.trim()) return msg.trim()
+        } catch {
+          // no-op
+        }
+      }
+      if (clone?.text) {
+        try {
+          const text = await clone.text()
+          if (text?.trim()) return text.trim()
+        } catch {
+          // no-op
+        }
+      }
+    }
+
+    if (typeof anyError?.message === 'string' && anyError.message.trim()) {
+      return anyError.message.trim()
+    }
+  } catch {
+    // no-op
+  }
+
+  return fallback
+}
+
+export default function TenantCreatePage() {
+  const navigate = useNavigate()
+
+  const [saving, setSaving] = useState(false)
+  const [loadingPlans, setLoadingPlans] = useState(true)
+  const [plansError, setPlansError] = useState<string | null>(null)
+  const [plans, setPlans] = useState<PlanOption[]>([])
+
+  const [draft, setDraft] = useState<TenantDraft>({
+    business_name: '',
+    ruc: '',
+    admin_email: '',
+    temp_password: '',
+    plan_type: '',
+    status: 'active',
+    contact_name: '',
+    contact_email: '',
+    contact_phone: '',
+    legal_rep_name: '',
+    legal_rep_email: '',
+    notes: '',
+    serial_numbers_text: '',
+    bio_location: '',
+    billing_period: 'monthly',
+    grace_days: 5,
+    auto_suspend: true,
+    pause_after_grace: true,
+    courtesy_discount_pct: 0,
+    courtesy_duration: 'one_time',
+    courtesy_periods: 1,
+  })
+
+  useEffect(() => {
+    let active = true
+
+    const loadPlans = async () => {
+      setLoadingPlans(true)
+      setPlansError(null)
+
+      try {
+        const { data, error } = await supabase
+          .schema('cerebro')
+          .from('subscription_plans')
+          .select('code, name, is_active')
+          .eq('is_active', true)
+          .order('name', { ascending: true })
+
+        if (error) throw error
+
+        const mapped = (data || [])
+          .map((row: any) => ({
+            code: String(row?.code || '').trim().toLowerCase(),
+            name: row?.name ? String(row.name).trim() : null,
+          }))
+          .filter((row) => row.code)
+
+        if (!active) return
+
+        if (!mapped.length) {
+          setPlans([])
+          setPlansError('No existen planes activos en cerebro.subscription_plans.')
+          setDraft((prev) => ({ ...prev, plan_type: '' }))
+          return
+        }
+
+        setPlans(mapped)
+        setDraft((prev) => {
+          const normalizedCurrent = String(prev.plan_type || '').trim().toLowerCase()
+          const exists = mapped.some((p) => p.code === normalizedCurrent)
+          return exists ? { ...prev, plan_type: normalizedCurrent } : { ...prev, plan_type: mapped[0].code }
+        })
+      } catch (e) {
+        console.error('No se pudieron cargar los planes desde cerebro.subscription_plans:', e)
+        if (!active) return
+        setPlans([])
+        setPlansError('No se pudieron cargar los planes activos desde Cerebro.')
+        setDraft((prev) => ({ ...prev, plan_type: '' }))
+      } finally {
+        if (active) setLoadingPlans(false)
+      }
+    }
+
+    loadPlans()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const serialNumbers = useMemo(() => parseSerialNumbers(draft.serial_numbers_text), [draft.serial_numbers_text])
+
+  const validation = useMemo(() => {
+    const issues: string[] = []
+
+    if (!draft.business_name.trim()) issues.push('Nombre de empresa requerido')
+
+    const cleanRuc = draft.ruc.replace(/\D/g, '')
+    const r = validateRUC(cleanRuc)
+    if (!r.valid) issues.push(r.error || 'RUC inválido')
+
+    if (!draft.admin_email.trim()) issues.push('Email admin requerido')
+    else if (!isValidEmail(draft.admin_email)) issues.push('Email admin inválido')
+
+    if (draft.contact_email.trim() && !isValidEmail(draft.contact_email)) {
+      issues.push('Email de contacto inválido')
+    }
+
+    if (draft.legal_rep_email.trim() && !isValidEmail(draft.legal_rep_email)) {
+      issues.push('Email del representante legal inválido')
+    }
+
+    if (!draft.temp_password.trim()) issues.push('Password temporal requerida')
+    else if (draft.temp_password.trim().length < 8) issues.push('La password temporal debe tener al menos 8 caracteres')
+
+    if (loadingPlans) issues.push('Cargando catálogo de planes...')
+    if (plansError) issues.push(plansError)
+
+    const selectedPlan = String(draft.plan_type || '').trim().toLowerCase()
+    if (!selectedPlan) {
+      issues.push('Plan requerido')
+    } else if (plans.length && !plans.some((p) => p.code === selectedPlan)) {
+      issues.push('El plan seleccionado no existe en cerebro.subscription_plans')
+    }
+
+    if (draft.grace_days < 0 || draft.grace_days > 365) issues.push('Tolerancia (días) inválida')
+    if (draft.courtesy_discount_pct < 0 || draft.courtesy_discount_pct > 100) issues.push('% descuento inválido')
+    if (draft.courtesy_duration === 'periods' && (draft.courtesy_periods < 1 || draft.courtesy_periods > 120)) {
+      issues.push('Periodos de cortesía inválidos')
+    }
+
+    return issues
+  }, [draft, loadingPlans, plans, plansError])
+
+  const setField = (patch: Partial<TenantDraft>) => setDraft((prev) => ({ ...prev, ...patch }))
+
+  const submit = async () => {
+    if (validation.length) {
+      toast.error(validation[0])
+      return
+    }
+
+    const selectedPlan = String(draft.plan_type || '').trim().toLowerCase()
+    if (!plans.some((p) => p.code === selectedPlan)) {
+      toast.error('El plan seleccionado no existe en cerebro.subscription_plans')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const cleanRuc = draft.ruc.replace(/\D/g, '')
+      const adminEmail = normalizeEmail(draft.admin_email)
+      const contactEmail = draft.contact_email.trim() ? normalizeEmail(draft.contact_email) : adminEmail
+      const legalRepEmail = draft.legal_rep_email.trim() ? normalizeEmail(draft.legal_rep_email) : null
+
+      const { count: duplicatedRuc, error: rucError } = await supabase
+        .from('tenants')
+        .select('id', { head: true, count: 'exact' })
+        .eq('ruc', cleanRuc)
+
+      if (rucError) {
+        console.warn('No se pudo prevalidar RUC en tenants:', rucError)
+      } else if ((duplicatedRuc || 0) > 0) {
+        toast.error('Ya existe una empresa con ese RUC.')
+        return
+      }
+
+      const payload = {
+        business_name: draft.business_name.trim(),
+        name: draft.business_name.trim(),
+        ruc: cleanRuc,
+        admin_email: adminEmail,
+        temp_password: draft.temp_password.trim(),
+        plan_type: selectedPlan,
+        plan: selectedPlan,
+        status: draft.status,
+        contact_name: draft.contact_name.trim() || null,
+        contact_email: contactEmail,
+        contact_phone: draft.contact_phone.trim() || null,
+        legal_rep_name: draft.legal_rep_name.trim() || null,
+        legal_rep_email: legalRepEmail,
+        notes: draft.notes.trim() || null,
+        serial_numbers: serialNumbers,
+        bio_serial: serialNumbers[0] || null,
+        bio_location: draft.bio_location.trim() || null,
+        billing_period: draft.billing_period,
+        grace_days: Number(draft.grace_days || 0),
+        auto_suspend: Boolean(draft.auto_suspend),
+        pause_after_grace: Boolean(draft.pause_after_grace),
+        courtesy_discount_pct: Number(draft.courtesy_discount_pct || 0),
+        courtesy_pct: Number(draft.courtesy_discount_pct || 0),
+        courtesy_duration: draft.courtesy_duration,
+        courtesy_periods: Number(draft.courtesy_periods || 1),
+        courtesy_times: Number(draft.courtesy_periods || 1),
+      }
+
+      const data = await invokeAdminCreateTenant(payload)
+
+      await logAuditEvent('TENANT_CREATED', {
+        tenant_id: (data as any)?.tenant_id || (data as any)?.id || null,
+        admin_user_id: (data as any)?.admin_user_id || null,
+        invite_link: (data as any)?.invite_link || null,
+        ruc: payload.ruc,
+        business_name: payload.business_name,
+        admin_email: payload.admin_email,
+        plan: payload.plan,
+      })
+
+      toast.success('Cliente creado correctamente.')
+      navigate('/tenants')
+    } catch (e) {
+      console.error('Error inesperado al crear tenant:', e)
+      const message = await extractFunctionError(e)
+      toast.error(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3">
+            <Link to="/tenants" className="btn-secondary inline-flex items-center gap-2">
+              <ArrowLeft className="w-4 h-4" /> Volver
+            </Link>
+            <h1 className="text-2xl font-bold">Nuevo cliente (Inquilino)</h1>
+          </div>
+          <p className="text-sm text-slate-400 mt-2">
+            Crea la empresa inquilino usando la Edge Function oficial y cargando los planes activos desde
+            <code className="mx-1">cerebro.subscription_plans</code>.
+          </p>
+        </div>
+        <button disabled={saving || loadingPlans || !!plansError} onClick={submit} className="btn-primary inline-flex items-center gap-2">
+          <Save className="w-4 h-4" /> {saving ? 'Guardando...' : 'Guardar'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-8 space-y-6">
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Building2 className="w-5 h-5 text-[var(--brand-primary)]" />
+              <h2 className="font-semibold">Datos del cliente</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="label">Razón social / nombre de la empresa</label>
+                <input
+                  className="input"
+                  value={draft.business_name}
+                  onChange={(e) => setField({ business_name: e.target.value })}
+                  placeholder="Banco / Empresa / Inquilino"
+                />
+              </div>
+
+              <div>
+                <label className="label">RUC (Ecuador)</label>
+                <input
+                  className="input"
+                  value={draft.ruc}
+                  onChange={(e) => setField({ ruc: e.target.value })}
+                  placeholder="13 dígitos"
+                  inputMode="numeric"
+                />
+                <p className="text-xs text-slate-400 mt-1">Validación automática de RUC y dígito verificador.</p>
+              </div>
+
+              <div>
+                <label className="label">Plan</label>
+                <select
+                  className="input"
+                  value={draft.plan_type}
+                  onChange={(e) => setField({ plan_type: e.target.value })}
+                  disabled={loadingPlans || !!plansError || !plans.length}
+                >
+                  {loadingPlans && <option value="">Cargando planes...</option>}
+                  {!loadingPlans && !plans.length && <option value="">No hay planes disponibles</option>}
+                  {!loadingPlans &&
+                    plans.map((plan) => (
+                      <option key={plan.code} value={plan.code}>
+                        {plan.name ? `${plan.name} (${plan.code})` : plan.code}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-xs text-slate-400 mt-1">Se cargan dinámicamente desde <code>cerebro.subscription_plans</code>.</p>
+              </div>
+
+              <div>
+                <label className="label">Estado inicial</label>
+                <select
+                  className="input"
+                  value={draft.status}
+                  onChange={(e) => setField({ status: e.target.value as TenantStatus })}
+                >
+                  <option value="active">Activo</option>
+                  <option value="trial">Trial</option>
+                  <option value="paused">Pausado</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Email admin del tenant</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    className="input pl-10"
+                    value={draft.admin_email}
+                    onChange={(e) => {
+                      const value = e.target.value
+                      setField({
+                        admin_email: value,
+                        contact_email: draft.contact_email.trim() ? draft.contact_email : value,
+                      })
+                    }}
+                    placeholder="admin@cliente.com"
+                    autoComplete="email"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Password temporal</label>
+                <div className="relative">
+                  <KeyRound className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    className="input pl-10"
+                    type="password"
+                    value={draft.temp_password}
+                    onChange={(e) => setField({ temp_password: e.target.value })}
+                    placeholder="Mínimo 8 caracteres"
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <User className="w-5 h-5 text-[var(--brand-accent)]" />
+              <h2 className="font-semibold">Contacto y representante legal</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="label">Nombre de contacto</label>
+                <input
+                  className="input"
+                  value={draft.contact_name}
+                  onChange={(e) => setField({ contact_name: e.target.value })}
+                  placeholder="Nombre del contacto principal"
+                />
+              </div>
+
+              <div>
+                <label className="label">Email de contacto</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    className="input pl-10"
+                    value={draft.contact_email}
+                    onChange={(e) => setField({ contact_email: e.target.value })}
+                    placeholder="contacto@cliente.com"
+                    autoComplete="email"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Teléfono de contacto</label>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    className="input pl-10"
+                    value={draft.contact_phone}
+                    onChange={(e) => setField({ contact_phone: e.target.value })}
+                    placeholder="Convencional o celular"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Periodo de cobro</label>
+                <select
+                  className="input"
+                  value={draft.billing_period}
+                  onChange={(e) => setField({ billing_period: e.target.value as BillingPeriod })}
+                >
+                  <option value="weekly">{periodLabel('weekly')}</option>
+                  <option value="biweekly">{periodLabel('biweekly')}</option>
+                  <option value="monthly">{periodLabel('monthly')}</option>
+                  <option value="semiannual">{periodLabel('semiannual')}</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Representante legal</label>
+                <input
+                  className="input"
+                  value={draft.legal_rep_name}
+                  onChange={(e) => setField({ legal_rep_name: e.target.value })}
+                  placeholder="Nombre del representante legal"
+                />
+              </div>
+
+              <div>
+                <label className="label">Email representante legal</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    className="input pl-10"
+                    value={draft.legal_rep_email}
+                    onChange={(e) => setField({ legal_rep_email: e.target.value })}
+                    placeholder="representante@cliente.com"
+                    autoComplete="email"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Cpu className="w-5 h-5 text-[var(--brand-secondary)]" />
+              <h2 className="font-semibold">Biométricos</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="label">Seriales biométricos</label>
+                <textarea
+                  className="input min-h-[110px]"
+                  value={draft.serial_numbers_text}
+                  onChange={(e) => setField({ serial_numbers_text: e.target.value })}
+                  placeholder={'Uno o varios seriales. Sepáralos por coma, punto y coma o salto de línea.\nEjemplo:\n8029252100142\n8029252100143'}
+                />
+                <p className="text-xs text-slate-400 mt-1">
+                  Se enviará <code>serial_numbers[]</code> a la Edge Function. Primer serial detectado: <strong>{serialNumbers[0] || 'ninguno'}</strong>
+                </p>
+              </div>
+
+              <div>
+                <label className="label">Ubicación referencial</label>
+                <input
+                  className="input"
+                  value={draft.bio_location}
+                  onChange={(e) => setField({ bio_location: e.target.value })}
+                  placeholder="Sede / Ciudad / Piso"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <ShieldCheck className="w-5 h-5 text-[var(--brand-accent)]" />
+              <h2 className="font-semibold">Tolerancia y cortesía</h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="label">Días de gracia</label>
+                <input
+                  className="input"
+                  type="number"
+                  value={draft.grace_days}
+                  onChange={(e) => setField({ grace_days: Number(e.target.value || 0) })}
+                  min={0}
+                  max={365}
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-7">
+                <input
+                  id="auto_suspend"
+                  type="checkbox"
+                  checked={draft.auto_suspend}
+                  onChange={(e) => setField({ auto_suspend: e.target.checked })}
+                />
+                <label htmlFor="auto_suspend" className="text-sm text-slate-200">
+                  Activar control automático por mora
+                </label>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2 md:pt-7">
+                <input
+                  id="pause_after_grace"
+                  type="checkbox"
+                  checked={draft.pause_after_grace}
+                  onChange={(e) => setField({ pause_after_grace: e.target.checked })}
+                  disabled={!draft.auto_suspend}
+                />
+                <label htmlFor="pause_after_grace" className="text-sm text-slate-200">
+                  Al vencer la gracia, pausar en lugar de suspender
+                </label>
+              </div>
+
+              <div>
+                <label className="label">% de cortesía / descuento</label>
+                <input
+                  className="input"
+                  type="number"
+                  value={draft.courtesy_discount_pct}
+                  onChange={(e) => setField({ courtesy_discount_pct: Number(e.target.value || 0) })}
+                  min={0}
+                  max={100}
+                />
+              </div>
+
+              <div>
+                <label className="label">Duración de cortesía</label>
+                <select
+                  className="input"
+                  value={draft.courtesy_duration}
+                  onChange={(e) => setField({ courtesy_duration: e.target.value as CourtesyDuration })}
+                >
+                  <option value="one_time">Una única vez</option>
+                  <option value="periods">Por número de periodos</option>
+                  <option value="contract">Durante el contrato</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Número de periodos de cortesía</label>
+                <input
+                  className="input"
+                  type="number"
+                  value={draft.courtesy_periods}
+                  onChange={(e) => setField({ courtesy_periods: Number(e.target.value || 1) })}
+                  min={1}
+                  disabled={draft.courtesy_duration !== 'periods'}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <FileText className="w-5 h-5 text-[var(--brand-primary)]" />
+              <h2 className="font-semibold">Notas internas</h2>
+            </div>
+            <textarea
+              className="input min-h-[120px]"
+              value={draft.notes}
+              onChange={(e) => setField({ notes: e.target.value })}
+              placeholder="Observaciones internas del alta del cliente"
+            />
+          </div>
+        </div>
+
+        <div className="lg:col-span-4 space-y-6">
+          <div className="card p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <KeyRound className="w-5 h-5 text-[var(--brand-secondary)]" />
+              <h2 className="font-semibold">Resumen técnico</h2>
+            </div>
+            <p className="text-sm text-slate-300">
+              Este formulario invoca la Edge Function <code>admin-create-tenant</code> con <strong>fetch nativo</strong>, token explícito desde localStorage y catálogo de planes en tiempo real.
+            </p>
+            <ul className="mt-3 space-y-2 text-sm text-slate-300 list-disc list-inside">
+              <li>Body alineado a <code>business_name</code>, <code>admin_email</code>, <code>temp_password</code> y <code>plan_type</code>.</li>
+              <li>Sin planes hardcodeados ni fallback local de catálogo.</li>
+              <li>Token explícito desde <code>localStorage</code> y cabeceras <code>Authorization</code> + <code>apikey</code>.</li>
+              <li>Sin fallback directo a <code>public.tenants</code>, para evitar errores de columnas incompatibles.</li>
+              <li>Seriales enviados como arreglo <code>serial_numbers[]</code>.</li>
+            </ul>
+            {validation.length ? (
+              <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+                {validation[0]}
+              </div>
+            ) : (
+              <div className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm text-emerald-100">
+                Listo para guardar.
+              </div>
+            )}
+          </div>
+
+          <div className="card p-6">
+            <h3 className="font-semibold">Buenas prácticas</h3>
+            <ul className="mt-3 space-y-2 text-sm text-slate-300 list-disc list-inside">
+              <li>Validación fuerte de RUC y correos en cliente y servidor.</li>
+              <li>Catálogo de planes gobernado únicamente por Cerebro.</li>
+              <li>Sin Service Role en el frontend.</li>
+              <li>Auditoría después del alta exitosa.</li>
+              <li>Evitar inserts directos cuando la lógica vive en Edge Functions.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -1,0 +1,450 @@
+import { handleCors, corsHeaders } from '../_shared/cors.ts'
+import { getAdminClient } from '../_shared/supabaseAdmin.ts'
+import { isValidEmail } from '../_shared/smtp.ts'
+
+type TenantStatus = 'active' | 'trial' | 'paused' | 'suspended'
+type CourtesyDuration = 'one_time' | 'periods' | 'contract'
+
+type Payload = {
+  business_name?: string
+  name?: string
+  ruc?: string
+  admin_email?: string
+  temp_password?: string
+  plan_type?: string
+  plan?: string
+  status?: TenantStatus
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
+  legal_rep_name?: string | null
+  legal_rep_email?: string | null
+  notes?: string | null
+  serial_numbers?: string[] | null
+  bio_serial?: string | null
+  bio_location?: string | null
+  billing_period?: string | null
+  grace_days?: number | null
+  auto_suspend?: boolean | null
+  pause_after_grace?: boolean | null
+  courtesy_discount_pct?: number | null
+  courtesy_pct?: number | null
+  courtesy_duration?: CourtesyDuration | null
+  courtesy_periods?: number | null
+  courtesy_times?: number | null
+}
+
+const normalizeEmail = (value: string) => value.trim().toLowerCase()
+const cleanText = (value: unknown) => String(value ?? '').trim()
+const cleanNullableText = (value: unknown) => {
+  const cleaned = cleanText(value)
+  return cleaned ? cleaned : null
+}
+const parseSerialNumbers = (value: unknown): string[] => {
+  const items = Array.isArray(value) ? value : []
+  return [...new Set(items.map((x) => cleanText(x)).filter(Boolean))]
+}
+
+async function getCallerUser(req: Request, supabase: ReturnType<typeof getAdminClient>) {
+  const authHeader = req.headers.get('Authorization') || ''
+  if (!authHeader.startsWith('Bearer ')) {
+    throw new Response(JSON.stringify({ error: 'Falta cabecera Authorization Bearer.' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  const token = authHeader.slice('Bearer '.length).trim()
+  if (!token) {
+    throw new Response(JSON.stringify({ error: 'Token vacío.' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser(token)
+
+  if (error || !user) {
+    throw new Response(JSON.stringify({ error: 'Token inválido o expirado.' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
+  return user
+}
+
+async function getCallerRole(supabase: ReturnType<typeof getAdminClient>, email: string) {
+  const normalized = normalizeEmail(email)
+
+  const queries = [
+    () => supabase.schema('cerebro').from('user_roles').select('role,is_active').ilike('email', normalized).limit(1).maybeSingle(),
+    () => supabase.from('user_roles').select('role,is_active').ilike('email', normalized).limit(1).maybeSingle(),
+  ]
+
+  for (const query of queries) {
+    try {
+      const { data, error } = await query()
+      if (!error && data) return data as { role?: string | null; is_active?: boolean | null }
+    } catch {
+      // no-op
+    }
+  }
+
+  return null
+}
+
+async function emailExistsInAuth(supabase: ReturnType<typeof getAdminClient>, email: string) {
+  const normalized = normalizeEmail(email)
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 })
+    if (error) throw error
+    const users = data?.users || []
+    if (users.some((u) => normalizeEmail(u.email || '') === normalized)) return true
+    if (users.length < 1000) break
+  }
+  return false
+}
+
+async function ensurePlanExists(supabase: ReturnType<typeof getAdminClient>, planCode: string) {
+  const normalized = cleanText(planCode).toLowerCase() || 'basico'
+  const queries = [
+    () => supabase.schema('cerebro').from('subscription_plans').select('code,is_active').eq('code', normalized).maybeSingle(),
+    () => supabase.from('subscription_plans').select('code,is_active').eq('code', normalized).maybeSingle(),
+  ]
+
+  for (const query of queries) {
+    try {
+      const { data, error } = await query()
+      if (!error && data?.code) return normalized
+    } catch {
+      // no-op
+    }
+  }
+
+  throw new Error(`El plan '${normalized}' no existe en subscription_plans.`)
+}
+
+async function insertBiometricDevices(supabase: ReturnType<typeof getAdminClient>, tenantId: string, serialNumbers: string[]) {
+  if (!serialNumbers.length) return
+
+  const rowsSerialNo = serialNumbers.map((serial) => ({
+    tenant_id: tenantId,
+    serial_no: serial,
+    name: `Biométrico ${serial}`,
+    is_active: true,
+  }))
+
+  const rowsSerialNumber = serialNumbers.map((serial) => ({
+    tenant_id: tenantId,
+    serial_number: serial,
+    name: `Biométrico ${serial}`,
+    is_active: true,
+  }))
+
+  const attempts = [
+    () => supabase.schema('attendance').from('biometric_devices').upsert(rowsSerialNo, { onConflict: 'serial_no' }),
+    () => supabase.schema('attendance').from('biometric_devices').upsert(rowsSerialNumber, { onConflict: 'serial_number' }),
+    () => supabase.schema('attendance').from('biometric_devices').insert(rowsSerialNo),
+    () => supabase.schema('attendance').from('biometric_devices').insert(rowsSerialNumber),
+  ]
+
+  let lastError: any = null
+  for (const attempt of attempts) {
+    try {
+      const { error } = await attempt()
+      if (!error) return
+      lastError = error
+      const msg = String(error?.message || error)
+      if (!msg.includes('column') && !msg.includes('constraint') && !msg.includes('on_conflict')) {
+        throw error
+      }
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  if (lastError) throw lastError
+}
+
+async function mirrorTenantIntoCerebro(supabase: ReturnType<typeof getAdminClient>, payload: Record<string, unknown>) {
+  try {
+    const { error } = await supabase.schema('cerebro').from('tenants').upsert(payload, { onConflict: 'id' })
+    if (error) console.warn('No se pudo sincronizar cerebro.tenants:', error)
+  } catch (error) {
+    console.warn('No se pudo sincronizar cerebro.tenants:', error)
+  }
+}
+
+async function insertAuditLog(supabase: ReturnType<typeof getAdminClient>, userEmail: string, details: Record<string, unknown>) {
+  const payload = {
+    user_email: normalizeEmail(userEmail),
+    action: 'CREATE_TENANT',
+    details,
+  }
+
+  try {
+    const { error } = await supabase.schema('cerebro').from('audit_logs').insert(payload)
+    if (!error) return
+  } catch {
+    // no-op
+  }
+
+  try {
+    await supabase.from('audit_logs').insert(payload)
+  } catch {
+    // no-op
+  }
+}
+
+Deno.serve(async (req) => {
+  const cors = handleCors(req)
+  if (cors) return cors
+
+  let tenantId: string | null = null
+  let adminUserId: string | null = null
+
+  try {
+    const supabase = getAdminClient()
+    const caller = await getCallerUser(req, supabase)
+    const callerEmail = normalizeEmail(caller.email || '')
+    const callerRole = await getCallerRole(supabase, callerEmail)
+
+    if (!callerRole || callerRole.role !== 'admin' || callerRole.is_active === false) {
+      return new Response(JSON.stringify({ error: 'No autorizado. Se requiere un admin activo de CEREBRO.' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const body = (await req.json()) as Payload
+    const businessName = cleanText(body.business_name || body.name)
+    const ruc = cleanText(body.ruc).replace(/\D/g, '')
+    const adminEmail = normalizeEmail(cleanText(body.admin_email))
+    const tempPassword = cleanText(body.temp_password)
+    const serialNumbers = parseSerialNumbers(body.serial_numbers)
+    const selectedPlan = await ensurePlanExists(supabase, body.plan_type || body.plan || 'basico')
+    const status = (cleanText(body.status).toLowerCase() || 'active') as TenantStatus
+    const graceDays = Math.max(0, Math.min(365, Number(body.grace_days ?? 0) || 0))
+    const courtesyPct = Math.max(0, Math.min(100, Number(body.courtesy_discount_pct ?? body.courtesy_pct ?? 0) || 0))
+    const courtesyTimes = Math.max(1, Number(body.courtesy_periods ?? body.courtesy_times ?? 1) || 1)
+
+    if (!businessName) {
+      return new Response(JSON.stringify({ error: 'business_name es requerido.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    if (!/^\d{13}$/.test(ruc)) {
+      return new Response(JSON.stringify({ error: 'RUC inválido. Debe contener 13 dígitos.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    if (!isValidEmail(adminEmail)) {
+      return new Response(JSON.stringify({ error: 'admin_email inválido.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    if (!tempPassword || tempPassword.length < 8) {
+      return new Response(JSON.stringify({ error: 'temp_password debe tener al menos 8 caracteres.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    if (body.contact_email && !isValidEmail(cleanText(body.contact_email))) {
+      return new Response(JSON.stringify({ error: 'contact_email inválido.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    if (body.legal_rep_email && !isValidEmail(cleanText(body.legal_rep_email))) {
+      return new Response(JSON.stringify({ error: 'legal_rep_email inválido.' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const { count: duplicatedRuc, error: duplicatedRucError } = await supabase
+      .from('tenants')
+      .select('id', { head: true, count: 'exact' })
+      .eq('ruc', ruc)
+
+    if (duplicatedRucError) throw duplicatedRucError
+    if ((duplicatedRuc || 0) > 0) {
+      return new Response(JSON.stringify({ error: 'Ya existe una empresa con ese RUC.' }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (await emailExistsInAuth(supabase, adminEmail)) {
+      return new Response(JSON.stringify({ error: 'El admin_email ya existe en auth.users.' }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    const tenantInsert = {
+      business_name: businessName,
+      name: businessName,
+      ruc,
+      legal_rep_name: cleanNullableText(body.legal_rep_name),
+      legal_rep_email: cleanNullableText(body.legal_rep_email),
+      contact_name: cleanNullableText(body.contact_name),
+      contact_email: cleanNullableText(body.contact_email) || adminEmail,
+      contact_phone: cleanNullableText(body.contact_phone),
+      plan_type: selectedPlan,
+      plan: selectedPlan,
+      status,
+      is_suspended: status === 'suspended',
+      current_balance: 0,
+      grace_days: graceDays,
+      pause_after_grace: Boolean(body.pause_after_grace ?? true),
+      notes: cleanNullableText(body.notes),
+      bio_serial: cleanNullableText(body.bio_serial) || serialNumbers[0] || null,
+      bio_location: cleanNullableText(body.bio_location),
+      billing_period: cleanNullableText(body.billing_period) || 'monthly',
+      courtesy_pct: courtesyPct,
+      courtesy_duration: cleanNullableText(body.courtesy_duration) || 'one_time',
+      courtesy_times: courtesyTimes,
+    }
+
+    const { data: createdTenant, error: tenantError } = await supabase.from('tenants').insert(tenantInsert).select('id').single()
+    if (tenantError || !createdTenant?.id) throw tenantError || new Error('No se pudo crear public.tenants.')
+    tenantId = createdTenant.id
+
+    await insertBiometricDevices(supabase, tenantId, serialNumbers)
+
+    const { data: createdUser, error: userError } = await supabase.auth.admin.createUser({
+      email: adminEmail,
+      password: tempPassword,
+      email_confirm: true,
+      user_metadata: {
+        full_name: cleanText(body.contact_name) || businessName,
+        role: 'tenant_admin',
+        tenant_id: tenantId,
+        source: 'admin-create-tenant',
+      },
+    })
+    if (userError || !createdUser?.user?.id) throw userError || new Error('No se pudo crear auth.users.')
+    adminUserId = createdUser.user.id
+
+    const { error: profileError } = await supabase.from('profiles').upsert(
+      {
+        id: adminUserId,
+        tenant_id: tenantId,
+        role: 'tenant_admin',
+        first_login_pending: true,
+        is_active: true,
+      },
+      { onConflict: 'id' },
+    )
+    if (profileError) throw profileError
+
+    const { error: membershipError } = await supabase.schema('attendance').from('memberships').upsert(
+      {
+        tenant_id: tenantId,
+        user_id: adminUserId,
+        role: 'tenant_admin',
+      },
+      { onConflict: 'tenant_id,user_id' },
+    )
+    if (membershipError) throw membershipError
+
+    let inviteLink: string | null = null
+    try {
+      const { data: inviteData, error: inviteError } = await supabase.auth.admin.generateLink({
+        type: 'invite',
+        email: adminEmail,
+      })
+      if (!inviteError) {
+        inviteLink = (inviteData as any)?.properties?.action_link || (inviteData as any)?.action_link || null
+      }
+    } catch {
+      inviteLink = null
+    }
+
+    await mirrorTenantIntoCerebro(supabase, {
+      id: tenantId,
+      name: businessName,
+      ruc,
+      contact_email: cleanNullableText(body.contact_email) || adminEmail,
+      contact_name: cleanNullableText(body.contact_name),
+      contact_phone: cleanNullableText(body.contact_phone),
+      legal_rep_name: cleanNullableText(body.legal_rep_name),
+      legal_rep_email: cleanNullableText(body.legal_rep_email),
+      plan: selectedPlan,
+      status,
+      bio_serial: cleanNullableText(body.bio_serial) || serialNumbers[0] || null,
+      bio_location: cleanNullableText(body.bio_location),
+      notes: cleanNullableText(body.notes),
+      is_suspended: status === 'suspended',
+      current_balance: 0,
+    })
+
+    await insertAuditLog(supabase, callerEmail, {
+      tenant_id: tenantId,
+      admin_user_id: adminUserId,
+      business_name: businessName,
+      admin_email: adminEmail,
+      ruc,
+      plan_type: selectedPlan,
+      serial_numbers: serialNumbers,
+    })
+
+    return new Response(
+      JSON.stringify({ success: true, tenant_id: tenantId, admin_user_id: adminUserId, invite_link: inviteLink }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 },
+    )
+  } catch (error) {
+    const response = error instanceof Response ? error : null
+    if (response) return response
+
+    const supabase = getAdminClient()
+    if (adminUserId) {
+      try {
+        await supabase.auth.admin.deleteUser(adminUserId)
+      } catch {
+        // no-op
+      }
+    }
+    if (tenantId) {
+      try {
+        await supabase.schema('attendance').from('memberships').delete().eq('tenant_id', tenantId)
+      } catch {
+        // no-op
+      }
+      try {
+        await supabase.schema('attendance').from('biometric_devices').delete().eq('tenant_id', tenantId)
+      } catch {
+        // no-op
+      }
+      try {
+        await supabase.from('profiles').delete().eq('tenant_id', tenantId)
+      } catch {
+        // no-op
+      }
+      try {
+        await supabase.from('tenants').delete().eq('id', tenantId)
+      } catch {
+        // no-op
+      }
+      try {
+        await supabase.schema('cerebro').from('tenants').delete().eq('id', tenantId)
+      } catch {
+        // no-op
+      }
+    }
+
+    console.error('admin-create-tenant error:', error)
+    return new Response(JSON.stringify({ error: (error as any)?.message || 'Error interno creando tenant.' }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+})

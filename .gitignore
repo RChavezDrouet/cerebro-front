@@ -1,0 +1,51 @@
+# secretos
+_secrets/
+**/_secrets/
+
+# env
+.env
+.env.*
+!.env.example
+
+# node / build
+node_modules/
+**/node_modules/
+dist/
+build/
+coverage/
+.vite/
+**/dist/
+**/build/
+**/coverage/
+**/.vite/
+
+# logs / ts
+*.log
+*.tsbuildinfo
+
+# llaves / certificados
+*.pem
+*.ppk
+*.key
+*.crt
+*.p12
+*.pfx
+
+# git anidados neutralizados
+.git.bak/
+**/.git.bak/
+
+# comprimidos y respaldos
+*.zip
+*.z01
+*.z02
+*.z03
+*.7z
+*.rar
+
+# temporales
+**/.temp/
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

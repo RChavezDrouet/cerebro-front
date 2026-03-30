@@ -1,0 +1,7 @@
+Reemplazar únicamente estos 2 archivos:
+
+1) src/App.tsx
+2) src/pages/config/ConfigHomePage.tsx
+
+No reemplaces src/config/ConfigHomePage.tsx.
+Ese archivo fue el que te dejó rutas inexistentes y te estaba rompiendo la navegación.
