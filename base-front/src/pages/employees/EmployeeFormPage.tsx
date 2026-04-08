@@ -52,6 +52,7 @@ import {
 } from './employeeSchemas'
 import { computeImageMetrics, validateMetrics } from '@/lib/facialQuality'
 import { ACCESS_ROLE_OPTIONS, accessRoleLabel, ensureUniqueTenantAdmin, fetchEmployeeAccessRole } from '@/lib/accessRoles'
+import { listBiometricDevicesConfig } from '@/services/biometricAliasesService'
 
 type Props = { mode: 'create' | 'edit' }
 
@@ -67,12 +68,18 @@ const DAYS_OF_WEEK = [
   { value: '0', label: 'Domingo' },
 ]
 
+async function signedPhoto(path?: string | null): Promise<string | null> {
+  if (!path) return null
+  const { data } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(path, 60 * 30)
+  return data?.signedUrl ?? null
+}
+
 async function fetchEmployee(tenantId: string, id: string) {
   const v = await supabase
     .schema('public')
     .from('v_employees_full')
     .select(
-      'id,tenant_id,employee_code,employee_number,first_name,last_name,email,identification,department_id,hire_date,salary,employment_status,facial_photo_url,vacation_start,vacation_end,lunch_tracking,work_mode,schedule_id,biometric_employee_code,created_at,updated_at'
+      'id,tenant_id,employee_code,first_name,last_name,email,phone,address,identification,department_id,hire_date,salary,employment_status,facial_photo_url,vacation_start,vacation_end,lunch_tracking,work_modality,work_mode,presential_days,presential_schedule_id,entry_biometric_id,exit_biometric_id,location_mode,is_department_head'
     )
     .eq('tenant_id', tenantId)
     .eq('id', id)
@@ -99,6 +106,7 @@ async function fetchDepartments(tenantId: string) {
     .select('id,name')
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
+    .order('display_order', { ascending: true, nullsFirst: false })
     .order('name')
 
   if (error) throw error
@@ -122,16 +130,20 @@ async function fetchFacialConfig(tenantId: string): Promise<FacialRecognitionCon
 }
 
 async function fetchBiometricDevices(tenantId: string) {
-  const { data, error } = await supabase
-    .schema(ATT_SCHEMA)
-    .from('biometric_devices')
-    .select('id,serial_no,name,location_alias,is_active,display_order')
-    .eq('tenant_id', tenantId)
-    .eq('is_active', true)
-    .order('name')
-
-  if (error) return []
-  return (data ?? []) as Array<{ id: string; serial_no: string; name: string; location_alias?: string | null; is_active: boolean; display_order?: number | null }>
+  try {
+    const rows = await listBiometricDevicesConfig(supabase)
+    return rows
+      .filter((row) => row.tenant_id === tenantId)
+      .filter((row) => row.is_active !== false)
+      .sort((a, b) => {
+        const ao = a.display_order ?? 999999
+        const bo = b.display_order ?? 999999
+        if (ao !== bo) return ao - bo
+        return biometricPrimaryLabel(a).localeCompare(biometricPrimaryLabel(b))
+      })
+  } catch {
+    return []
+  }
 }
 
 async function fetchSchedules(tenantId: string) {
@@ -174,98 +186,59 @@ function note(text: string) {
   )
 }
 
-
-function parseEmployeeSaveError(err: unknown) {
-  const raw = String((err as any)?.message ?? err ?? '').trim()
-  const msg = raw.toLowerCase()
-
-  if (!raw) return 'No se pudo guardar el empleado. Intenta nuevamente.'
-
-  if (msg.includes('duplicate key') || msg.includes('ya está en uso') || msg.includes('already exists') || msg.includes('unique constraint')) {
-    if (msg.includes('email') || msg.includes('correo')) {
-      return 'No se pudo guardar porque el correo electrónico ya está registrado en otro empleado o usuario. Usa un correo diferente o edita el registro existente.'
-    }
-    if (msg.includes('employee_code') || msg.includes('employees_employee_code') || msg.includes('employee code')) {
-      return 'No se pudo guardar porque el código de empleado ya existe. Usa un código diferente.'
-    }
-    if (msg.includes('identification') || msg.includes('cedula') || msg.includes('cédula')) {
-      return 'No se pudo guardar porque la cédula o identificación ya está registrada en otro empleado.'
-    }
-    return 'No se pudo guardar porque ya existe otro registro con los mismos datos clave.'
-  }
-
-  if (msg.includes('row-level security') || msg.includes('rls') || msg.includes('403')) {
-    if (msg.includes('departments')) {
-      return 'No se pudo guardar porque el sistema intentó crear o actualizar el departamento visible y la base de datos lo bloqueó por permisos. Aplica el fix de la RPC ensure_department_for_org_unit o revisa las políticas RLS de departments.'
-    }
-    return 'No se pudo guardar porque tu usuario no tiene permisos suficientes para esta operación.'
-  }
-
-  if (msg.includes('jwt') || msg.includes('401') || msg.includes('invalid login')) {
-    return 'Tu sesión ya no es válida. Recarga la página e inicia sesión nuevamente.'
-  }
-
-  if (msg == 'sin tenant' || msg.includes('tenant')) {
-    return 'No se pudo determinar la empresa activa del usuario. Cierra sesión y vuelve a ingresar.'
-  }
-
-  return raw
+type BiometricOptionRow = {
+  id: string
+  serial_no: string
+  name?: string | null
+  location_alias?: string | null
+  location_details?: string | null
+  display_alias?: string | null
+  is_active?: boolean
+  display_order?: number | null
+  tenant_id?: string
 }
 
-type OrgUnitLike = { id: string; name?: string | null; parent_id?: string | null }
-type DepartmentLike = { id: string; name?: string | null }
-
-function getOrgUnitLeafName(units: OrgUnitLike[], orgUnitId?: string | null) {
-  if (!orgUnitId) return null
-  const unit = units.find((row) => row.id === orgUnitId)
-  const raw = String(unit?.name ?? '').trim()
-  return raw || null
+function cleanBiometricText(value?: string | null) {
+  return String(value ?? '').trim()
 }
 
-async function ensureDepartmentFromOrgUnit(
-  tenantId: string,
-  orgUnits: OrgUnitLike[],
-  orgUnitId?: string | null,
-  existingDepartmentId?: string | null,
-  existingDepartments: DepartmentLike[] = [],
-) {
-  if (existingDepartmentId) return { departmentId: existingDepartmentId, departmentName: null as string | null, created: false }
+function isTechnicalBiometricText(value: string, device: Pick<BiometricOptionRow, 'serial_no' | 'name'>) {
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return true
+  const serial = cleanBiometricText(device.serial_no).toLowerCase()
+  const name = cleanBiometricText(device.name).toLowerCase()
+  if (serial && normalized === serial) return true
+  if (name && normalized === name) return true
+  if (serial && (normalized === `biométrico ${serial}` || normalized === `biometrico ${serial}`)) return true
+  if (serial && (normalized.startsWith('biométrico ') || normalized.startsWith('biometrico ')) && normalized.includes(serial)) return true
+  return false
+}
 
-  const leafName = getOrgUnitLeafName(orgUnits, orgUnitId)
-  if (!leafName) return { departmentId: null as string | null, departmentName: null as string | null, created: false }
+function biometricPrimaryLabel(device: Pick<BiometricOptionRow, 'serial_no' | 'name' | 'location_alias' | 'location_details' | 'display_alias'>) {
+  const preferred = [
+    cleanBiometricText(device.location_alias),
+    cleanBiometricText(device.location_details),
+    cleanBiometricText(device.display_alias),
+    cleanBiometricText(device.name),
+  ].find((candidate) => candidate && !isTechnicalBiometricText(candidate, device as any))
 
-  const localMatch = existingDepartments.find((row) => String(row.name ?? '').trim().toLowerCase() === leafName.toLowerCase())
-  if (localMatch?.id) {
-    return { departmentId: localMatch.id, departmentName: leafName, created: false }
-  }
+  return (
+    preferred ||
+    cleanBiometricText(device.location_details) ||
+    cleanBiometricText(device.location_alias) ||
+    cleanBiometricText(device.display_alias) ||
+    cleanBiometricText(device.name) ||
+    cleanBiometricText(device.serial_no) ||
+    'Biométrico'
+  )
+}
 
-  const { data: ensured, error: ensureError } = await supabase
-    .rpc('ensure_department_for_org_unit', {
-      p_tenant_id: tenantId,
-      p_name: leafName,
-    })
-    .maybeSingle<{ id: string; name: string }>()
-
-  if (ensureError) throw ensureError
-  if (ensured?.id) {
-    return { departmentId: ensured.id as string, departmentName: ensured.name as string, created: true }
-  }
-
-  const { data: retryFound, error: retryError } = await supabase
-    .schema('public')
-    .from('departments')
-    .select('id,name')
-    .eq('tenant_id', tenantId)
-    .ilike('name', leafName)
-    .limit(1)
-    .maybeSingle()
-
-  if (retryError) throw retryError
-  if (retryFound?.id) {
-    return { departmentId: retryFound.id as string, departmentName: leafName, created: false }
-  }
-
-  throw new Error('No se pudo asegurar el departamento visible a partir de la unidad organizacional.')
+function biometricSelectLabel(device: Pick<BiometricOptionRow, 'serial_no' | 'name' | 'location_alias' | 'location_details' | 'display_alias'>) {
+  const primary = biometricPrimaryLabel(device)
+  const serial = cleanBiometricText(device.serial_no)
+  return serial && primary.toLowerCase() !== serial.toLowerCase()
+    ? `${primary} · ${serial}`
+    : primary || serial || 'Biométrico'
 }
 
 export default function EmployeeFormPage({ mode }: Props) {
@@ -283,6 +256,8 @@ export default function EmployeeFormPage({ mode }: Props) {
     first_name: '',
     last_name: '',
     email: '',
+    phone: null,
+    address: null,
     identification: '',
     department_id: null,
     hire_date: null,
@@ -315,6 +290,7 @@ export default function EmployeeFormPage({ mode }: Props) {
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [vacOpen, setVacOpen] = React.useState(false)
   const [photoFile, setPhotoFile] = React.useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = React.useState<string | null>(null)
   const [photoCheck, setPhotoCheck] = React.useState<{ ok: boolean; issues: string[] } | null>(null)
   const [showPass, setShowPass] = React.useState(false)
 
@@ -339,6 +315,14 @@ export default function EmployeeFormPage({ mode }: Props) {
     queryFn: () => fetchEmployee(tenantId!, id!),
   })
 
+  // Signed URL para foto existente
+  const existingPhoto = useQuery({
+    queryKey: ['emp-photo', (emp.data as any)?.facial_photo_url],
+    enabled: !!(emp.data as any)?.facial_photo_url,
+    queryFn: () => signedPhoto((emp.data as any)?.facial_photo_url),
+    staleTime: 25 * 60 * 1000,
+  })
+
   const accessInfo = useQuery({
     queryKey: ['employee-access', tenantId, id, (emp.data as any)?.user_id],
     enabled: !!tenantId && !!id && isEdit,
@@ -357,27 +341,30 @@ export default function EmployeeFormPage({ mode }: Props) {
     queryFn: () => fetchEmployeeShiftAssignment(tenantId!, id!),
   })
 
+  // ── Hydrate form with employee data on edit ──────────────────────────────────
   React.useEffect(() => {
     if (!emp.data) return
     const e: any = emp.data
     setForm((f) => ({
       ...f,
-      employee_code: e.employee_code ?? e.employee_number ?? '',
+      employee_code: e.employee_code ?? e.employee_number ?? e.biometric_employee_code ?? '',
       first_name: e.first_name ?? '',
       last_name: e.last_name ?? '',
       email: e.email ?? '',
+      phone: e.phone ?? null,
+      address: e.address ?? null,
       identification: e.identification ?? e.cedula ?? '',
       department_id: e.department_id ?? null,
       hire_date: e.hire_date ?? null,
       salary: e.salary != null ? Number(e.salary) : null,
-      employment_status: String(e.employment_status ?? 'ACTIVE').toUpperCase() as EmployeeFormValues['employment_status'],
+      employment_status: String(e.employment_status ?? 'ACTIVE').toUpperCase(),
       vacation_start: e.vacation_start ?? null,
       vacation_end: e.vacation_end ?? null,
       lunch_tracking: e.lunch_tracking ?? true,
       facial_photo_url: e.facial_photo_url ?? null,
       work_modality: e.work_modality ?? e.work_mode ?? 'PRESENCIAL',
       presential_days: e.presential_days ?? [],
-      presential_schedule_id: e.presential_schedule_id ?? e.schedule_id ?? null,
+      presential_schedule_id: e.presential_schedule_id ?? null,
       location_mode: e.location_mode ?? 'INDISTINTO',
       entry_biometric_id: e.entry_biometric_id ?? null,
       exit_biometric_id: e.exit_biometric_id ?? null,
@@ -425,6 +412,14 @@ export default function EmployeeFormPage({ mode }: Props) {
     set('presential_days', next)
   }
 
+  // Photo preview
+  React.useEffect(() => {
+    if (!photoFile) return
+    const url = URL.createObjectURL(photoFile)
+    setPhotoPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [photoFile])
+
   const save = useMutation({
     mutationFn: async () => {
       if (!tenantId) throw new Error('Sin tenant')
@@ -458,21 +453,20 @@ export default function EmployeeFormPage({ mode }: Props) {
           throw new Error('VALIDATION')
         }
         tempPassword = form.password
-      } else if (isEdit && (form.password || form.password_confirm)) {
-        setErrors((p) => ({ ...p, password: 'El cambio de contraseña no se realiza desde este formulario' }))
-        throw new Error('ADMIN_PASSWORD_EDIT_NOT_SUPPORTED')
+      } else if (isEdit && requiresSystemAccess && (form.password || form.password_confirm)) {
+        // En edición, si se ingresa contraseña, se permite cambiarla
+        if (form.password && form.password.length < 8) {
+          setErrors((p) => ({ ...p, password: 'La contraseña debe tener mínimo 8 caracteres' }))
+          throw new Error('VALIDATION')
+        }
+        if (form.password && form.password !== form.password_confirm) {
+          setErrors((p) => ({ ...p, password_confirm: 'Las contraseñas no coinciden' }))
+          throw new Error('VALIDATION')
+        }
+        if (form.password) tempPassword = form.password
       }
 
       const employeeId = isEdit ? String(id) : crypto.randomUUID()
-
-      const departmentResolution = await ensureDepartmentFromOrgUnit(
-        tenantId,
-        (orgUnits.data ?? []) as OrgUnitLike[],
-        form.org_unit_id ?? null,
-        form.department_id ?? null,
-        (deps.data ?? []) as DepartmentLike[],
-      )
-      const effectiveDepartmentId = departmentResolution.departmentId
 
       if (form.access_role === 'tenant_admin') {
         await ensureUniqueTenantAdmin(tenantId, employeeId, accessInfo.data?.user_id ?? (emp.data as any)?.user_id ?? null)
@@ -496,6 +490,7 @@ export default function EmployeeFormPage({ mode }: Props) {
 
       const normalizedEmploymentStatus = String(form.employment_status || 'ACTIVE').toLowerCase()
 
+      // ── upsert_employee_full con TODOS los campos ─────────────────────────────
       const { error } = await supabase.schema(ATT_SCHEMA).rpc('upsert_employee_full', {
         p_tenant_id: tenantId,
         p_employee_id: employeeId,
@@ -503,8 +498,10 @@ export default function EmployeeFormPage({ mode }: Props) {
         p_first_name: form.first_name,
         p_last_name: form.last_name,
         p_email: form.email,
+        p_phone: form.phone ?? null,
+        p_address: form.address ?? null,
         p_identification: form.identification,
-        p_department_id: effectiveDepartmentId,
+        p_department_id: form.department_id,
         p_hire_date: form.hire_date,
         p_salary: form.salary,
         p_employment_status: normalizedEmploymentStatus,
@@ -512,6 +509,12 @@ export default function EmployeeFormPage({ mode }: Props) {
         p_vacation_start: form.vacation_start,
         p_vacation_end: form.vacation_end,
         p_lunch_tracking: form.lunch_tracking,
+        p_work_modality: form.work_modality,
+        p_presential_days: form.presential_days ?? [],
+        p_location_mode: form.location_mode,
+        p_entry_biometric_id: form.entry_biometric_id ?? null,
+        p_exit_biometric_id: form.exit_biometric_id ?? null,
+        p_is_department_head: form.is_department_head ?? false,
       })
       if (error) throw error
 
@@ -556,16 +559,14 @@ export default function EmployeeFormPage({ mode }: Props) {
         }
       }
 
-      return { id: employeeId, warnings, departmentResolution }
+      return { id: employeeId, warnings }
     },
     onSuccess: (result) => {
       toast.success(isEdit ? 'Empleado actualizado' : 'Empleado creado')
       result.warnings.forEach((warning) => toast(warning, { icon: '⚠️' }))
-      if (result.departmentResolution?.departmentName) {
-        toast(`Departamento visible sincronizado con unidad organizacional: ${result.departmentResolution.departmentName}`, { icon: '🏷️' })
-      }
       qc.invalidateQueries({ queryKey: ['employees'] })
       qc.invalidateQueries({ queryKey: ['emp'] })
+      qc.invalidateQueries({ queryKey: ['employee'] })
       qc.invalidateQueries({ queryKey: ['employee-org-assignment'] })
       qc.invalidateQueries({ queryKey: ['employee-shift-assignment'] })
       nav(`/employees/${result.id}`, { replace: true })
@@ -585,13 +586,13 @@ export default function EmployeeFormPage({ mode }: Props) {
         toast.error('Ya existe un Administrador HRCloud activo para esta empresa. Solo puede haber uno.')
         return
       }
-      toast.error(parseEmployeeSaveError(e))
+      toast.error(e?.message || 'No se pudo guardar')
     },
   })
 
   const bioOptions = (bioDevices.data ?? []).map((d) => ({
     value: d.id,
-    label: `${(d.location_alias ?? d.name ?? d.serial_no)}${d.serial_no ? ` (${d.serial_no})` : ''}`
+    label: biometricSelectLabel(d as any),
   }))
   const filteredSchedules = React.useMemo(() => {
     const rows = schedules.data ?? []
@@ -613,20 +614,33 @@ export default function EmployeeFormPage({ mode }: Props) {
   }, [form.lead_org_unit_id, form.org_unit_id, orgUnits.data, orgLevels.data])
   const selectedRoleMeta = ACCESS_ROLE_OPTIONS.find((opt) => opt.value === form.access_role)
 
+  if (isEdit && emp.isLoading) {
+    return <div className="text-white/70 p-6">Cargando datos del empleado…</div>
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <button className="mb-2 inline-flex items-center gap-2 text-sm text-white/60 hover:text-white" onClick={() => nav('/employees')}>
-            <ChevronLeft size={16} /> Volver
+          <button className="mb-2 inline-flex items-center gap-2 text-sm text-white/60 hover:text-white" onClick={() => nav(isEdit ? `/employees/${id}` : '/employees')}>
+            <ChevronLeft size={16} /> {isEdit ? 'Volver al perfil' : 'Volver'}
           </button>
-          <h1 className="text-xl font-bold">{isEdit ? 'Editar empleado' : 'Nuevo empleado'}</h1>
+          <h1 className="text-xl font-bold">
+            {isEdit
+              ? `Editar: ${emp.data ? `${(emp.data as any).first_name} ${(emp.data as any).last_name}` : '…'}`
+              : 'Nuevo empleado'}
+          </h1>
         </div>
-        <Button leftIcon={save.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} onClick={() => save.mutate()} disabled={save.isPending}>
-          Guardar
+        <Button
+          leftIcon={save.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          onClick={() => save.mutate()}
+          disabled={save.isPending}
+        >
+          {save.isPending ? 'Guardando…' : 'Guardar cambios'}
         </Button>
       </div>
 
+      {/* ── Estado ─────────────────────────────────────────────────────── */}
       <Card title="Estado del empleado">
         <div className="flex flex-wrap gap-2">
           {(['ACTIVE', 'VACATION', 'SUSPENDED', 'TERMINATED'] as const).map((status) => (
@@ -644,30 +658,122 @@ export default function EmployeeFormPage({ mode }: Props) {
         </div>
       </Card>
 
+      {/* ── Datos básicos + Foto ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card title="Datos básicos" className="xl:col-span-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Input label="Código" value={form.employee_code} onChange={(e) => set('employee_code', e.target.value)} error={errors.employee_code} />
-            <Input label="Cédula / ID" value={form.identification} onChange={(e) => set('identification', e.target.value.replace(/\D+/g, ''))} error={errors.identification} inputMode="numeric" />
-            <Input label="Nombres" value={form.first_name} onChange={(e) => set('first_name', e.target.value)} error={errors.first_name} />
-            <Input label="Apellidos" value={form.last_name} onChange={(e) => set('last_name', e.target.value)} error={errors.last_name} />
-            <Input label="Email" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} error={errors.email} />
-            <Input label="Fecha contratación" type="date" value={form.hire_date ?? ''} onChange={(e) => set('hire_date', e.target.value || null)} />
-            <Input label="Sueldo" type="number" value={form.salary ?? ''} onChange={(e) => set('salary', e.target.value ? Number(e.target.value) : null)} />
+            <Input
+              label="Código de empleado"
+              value={form.employee_code}
+              onChange={(e) => set('employee_code', e.target.value)}
+              error={errors.employee_code}
+            />
+            <Input
+              label="Cédula / ID"
+              value={form.identification}
+              onChange={(e) => set('identification', e.target.value.replace(/\D+/g, ''))}
+              error={errors.identification}
+              inputMode="numeric"
+            />
+            <Input
+              label="Nombres"
+              value={form.first_name}
+              onChange={(e) => set('first_name', e.target.value)}
+              error={errors.first_name}
+            />
+            <Input
+              label="Apellidos"
+              value={form.last_name}
+              onChange={(e) => set('last_name', e.target.value)}
+              error={errors.last_name}
+            />
+            <Input
+              label="Email"
+              type="email"
+              value={form.email}
+              onChange={(e) => set('email', e.target.value)}
+              error={errors.email}
+            />
+            <Input
+              label="Teléfono"
+              value={form.phone ?? ''}
+              onChange={(e) => set('phone', e.target.value || null)}
+              error={errors.phone}
+              placeholder="Ej: 0991234567"
+            />
+            <Input
+              label="Fecha contratación"
+              type="date"
+              value={form.hire_date ?? ''}
+              onChange={(e) => set('hire_date', e.target.value || null)}
+            />
+            <Input
+              label="Sueldo"
+              type="number"
+              value={form.salary ?? ''}
+              onChange={(e) => set('salary', e.target.value ? Number(e.target.value) : null)}
+            />
+            <div className="md:col-span-2">
+              <Input
+                label="Dirección"
+                value={form.address ?? ''}
+                onChange={(e) => set('address', e.target.value || null)}
+                error={errors.address}
+                placeholder="Dirección del empleado"
+              />
+            </div>
           </div>
         </Card>
 
         <Card title="Fotografía" subtitle="Reconocimiento facial" actions={<Camera size={18} className="text-white/60" />}>
-          <div className="space-y-2">
-            <input type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)} className="text-sm text-white/70" />
+          <div className="space-y-3">
+            {/* Foto existente guardada */}
+            {!photoPreview && existingPhoto.data && (
+              <img
+                src={existingPhoto.data}
+                alt="Foto actual"
+                className="w-full rounded-2xl border border-white/10 object-cover max-h-56"
+              />
+            )}
+            {!photoPreview && form.facial_photo_url && !existingPhoto.data && (
+              <div className="text-xs text-white/50 italic">Foto guardada. Cargando vista previa…</div>
+            )}
+            {/* Vista previa de nueva foto seleccionada */}
+            {photoPreview && (
+              <img
+                src={photoPreview}
+                alt="Vista previa nueva foto"
+                className="w-full rounded-2xl border border-white/10 object-cover max-h-56"
+              />
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+              className="text-sm text-white/70"
+            />
             {errors.facial_photo_url && <div className="text-xs text-rose-200">{errors.facial_photo_url}</div>}
-            {photoCheck && !photoCheck.ok && <div className="text-xs text-rose-200">La foto no cumple: {photoCheck.issues.join(', ')}</div>}
-            <p className="text-xs text-white/50">La fotografía es obligatoria y se valida contra la configuración facial del tenant.</p>
+            {photoCheck && !photoCheck.ok && (
+              <div className="text-xs text-rose-200">La foto no cumple: {photoCheck.issues.join(', ')}</div>
+            )}
+            {photoCheck?.ok && (
+              <div className="text-xs text-emerald-300">✓ Fotografía válida</div>
+            )}
+            <p className="text-xs text-white/50">
+              {isEdit
+                ? 'Opcional: sube una nueva foto para reemplazar la actual.'
+                : 'La fotografía es obligatoria y se valida contra la configuración facial del tenant.'}
+            </p>
           </div>
         </Card>
       </div>
 
-      <Card title="Rol de acceso en Base" subtitle="Diferencia la jefatura organizacional del rol de acceso al sistema" actions={<ShieldCheck size={18} className="text-white/60" />}>
+      {/* ── Rol de acceso ─────────────────────────────────────────────── */}
+      <Card
+        title="Rol de acceso en Base"
+        subtitle="Diferencia la jefatura organizacional del rol de acceso al sistema"
+        actions={<ShieldCheck size={18} className="text-white/60" />}
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Select
             label="Rol del sistema"
@@ -689,18 +795,25 @@ export default function EmployeeFormPage({ mode }: Props) {
         </div>
       </Card>
 
+      {/* ── Credenciales ──────────────────────────────────────────────── */}
       {requiresSystemAccess ? (
-        <Card title="Credenciales de acceso" subtitle={!isEdit ? 'Contraseña temporal para el primer ingreso al sistema' : 'La contraseña no se cambia desde este formulario'} actions={<KeyRound size={18} className="text-white/60" />}>
+        <Card
+          title="Credenciales de acceso"
+          subtitle={!isEdit ? 'Contraseña temporal para el primer ingreso al sistema' : 'Opcional: ingresa nueva contraseña solo si deseas cambiarla'}
+          actions={<KeyRound size={18} className="text-white/60" />}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium mb-1 text-white/60">Contraseña temporal{!isEdit && <span className="text-rose-400 ml-1">*</span>}</label>
+              <label className="block text-xs font-medium mb-1 text-white/60">
+                Contraseña temporal{!isEdit && <span className="text-rose-400 ml-1">*</span>}
+              </label>
               <div className="relative">
                 <input
                   type={showPass ? 'text' : 'password'}
                   value={form.password ?? ''}
                   onChange={(e) => set('password', e.target.value)}
-                  placeholder={isEdit ? 'No editable desde este formulario' : 'Mínimo 8 caracteres'}
-                  disabled={isEdit}
+                  placeholder={isEdit ? 'Dejar vacío para no cambiar' : 'Mínimo 8 caracteres'}
+                  disabled={false}
                   className="w-full px-3 py-2 pr-10 rounded-xl text-sm outline-none border border-white/15 bg-white/5 text-white placeholder:text-white/30 focus:border-blue-500 disabled:opacity-50"
                 />
                 <button type="button" onClick={() => setShowPass((v) => !v)} className="absolute right-3 top-2.5 text-white/40 hover:text-white/70">
@@ -710,13 +823,15 @@ export default function EmployeeFormPage({ mode }: Props) {
               {errors.password && <p className="text-xs text-rose-300 mt-1">{errors.password}</p>}
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1 text-white/60">Confirmar contraseña{!isEdit && <span className="text-rose-400 ml-1">*</span>}</label>
+              <label className="block text-xs font-medium mb-1 text-white/60">
+                Confirmar contraseña{!isEdit && <span className="text-rose-400 ml-1">*</span>}
+              </label>
               <input
                 type={showPass ? 'text' : 'password'}
                 value={form.password_confirm ?? ''}
                 onChange={(e) => set('password_confirm', e.target.value)}
-                placeholder={isEdit ? 'No editable desde este formulario' : 'Repetir contraseña'}
-                disabled={isEdit}
+                placeholder={isEdit ? 'Dejar vacío para no cambiar' : 'Repetir contraseña'}
+                disabled={false}
                 className="w-full px-3 py-2 rounded-xl text-sm outline-none border border-white/15 bg-white/5 text-white placeholder:text-white/30 focus:border-blue-500 disabled:opacity-50"
               />
               {errors.password_confirm && <p className="text-xs text-rose-300 mt-1">{errors.password_confirm}</p>}
@@ -724,18 +839,29 @@ export default function EmployeeFormPage({ mode }: Props) {
           </div>
           <div className="mt-3 flex items-start gap-2 rounded-xl bg-blue-500/10 border border-blue-500/20 px-4 py-3">
             <Lock size={13} className="flex-shrink-0 mt-0.5 text-blue-400" />
-            <p className="text-xs text-white/60">Estas credenciales cubren el acceso PWA para personal remoto/mixto y también el acceso administrativo cuando el rol del sistema no es Empleado.</p>
+            <p className="text-xs text-white/60">
+              Estas credenciales cubren el acceso PWA para personal remoto/mixto y también el acceso administrativo cuando el rol del sistema no es Empleado. En edición, deja la contraseña vacía si no deseas cambiarla.
+            </p>
           </div>
         </Card>
       ) : (
-        <Card title="Acceso al sistema" subtitle="No requiere credenciales en este momento" actions={<KeyRound size={18} className="text-white/60" />}>
+        <Card
+          title="Acceso al sistema"
+          subtitle="No requiere credenciales en este momento"
+          actions={<KeyRound size={18} className="text-white/60" />}
+        >
           <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
             Este empleado es presencial y no tiene rol administrativo. Por eso no se provisionan credenciales PWA ni acceso Base en la creación.
           </div>
         </Card>
       )}
 
-      <Card title="Modalidad de trabajo" subtitle="Define cómo y desde dónde trabaja el empleado" actions={<Briefcase size={18} className="text-white/60" />}>
+      {/* ── Modalidad de trabajo ───────────────────────────────────────── */}
+      <Card
+        title="Modalidad de trabajo"
+        subtitle="Define cómo y desde dónde trabaja el empleado"
+        actions={<Briefcase size={18} className="text-white/60" />}
+      >
         <div className="space-y-5">
           <div>
             <label className="block text-sm text-white/60 mb-2">Modalidad</label>
@@ -778,20 +904,40 @@ export default function EmployeeFormPage({ mode }: Props) {
               </div>
               {form.location_mode === 'UBICACION' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
-                  <Select label="Biométrico de entrada" value={form.entry_biometric_id ?? ''} onChange={(v) => set('entry_biometric_id', v || null)} options={bioOptions} placeholder="Seleccione ubicación…" error={errors.entry_biometric_id} />
-                  <Select label="Biométrico de salida" value={form.exit_biometric_id ?? ''} onChange={(v) => set('exit_biometric_id', v || null)} options={bioOptions} placeholder="Seleccione ubicación…" error={errors.exit_biometric_id} />
+                  <Select
+                    label="Biométrico de entrada"
+                    value={form.entry_biometric_id ?? ''}
+                    onChange={(v) => set('entry_biometric_id', v || null)}
+                    options={bioOptions}
+                    placeholder="Seleccione ubicación…"
+                    error={errors.entry_biometric_id}
+                  />
+                  <Select
+                    label="Biométrico de salida"
+                    value={form.exit_biometric_id ?? ''}
+                    onChange={(v) => set('exit_biometric_id', v || null)}
+                    options={bioOptions}
+                    placeholder="Seleccione ubicación…"
+                    error={errors.exit_biometric_id}
+                  />
                 </div>
               )}
-              {bioDevices.isError && <p className="text-xs text-amber-300">No se pudieron cargar los biométricos. Verifique attendance.biometric_devices.</p>}
+              {bioDevices.isError && (
+                <p className="text-xs text-amber-300">No se pudieron cargar los biométricos. Verifique attendance.biometric_devices.</p>
+              )}
             </div>
           )}
         </div>
       </Card>
 
-      <Card title="Departamento / jefatura inmediata y asignación laboral" subtitle="Asigna el área, sección o departamento donde pertenece el empleado, su jefatura inmediata, turno y horario" actions={<Workflow size={18} className="text-white/60" />}>
+      {/* ── Estructura organizacional ──────────────────────────────────── */}
+      <Card
+        title="Departamento / jefatura inmediata y asignación laboral"
+        subtitle="Asigna el área, sección o departamento donde pertenece el empleado, su jefatura inmediata, turno y horario"
+        actions={<Workflow size={18} className="text-white/60" />}
+      >
         <div className="space-y-5">
           {orgSchemaMissing && note(ORG_MIGRATION_HINT)}
-          {!orgSchemaMissing && note('Política estructural activa: si el empleado tiene unidad organizacional y no tiene departamento explícito, el sistema usa la unidad como departamento visible en reportes y listados.')}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Select
               label="Departamento / área / sección donde pertenece *"
@@ -828,7 +974,7 @@ export default function EmployeeFormPage({ mode }: Props) {
                 placeholder={form.work_shift_id ? 'Seleccione horario…' : 'Seleccione primero un turno…'}
                 error={errors.presential_schedule_id}
               />
-              <p className="text-xs text-white/50">Los horarios se filtran según el turno seleccionado y se usan en asistencia, dashboardes y reportes.</p>
+              <p className="text-xs text-white/50">Los horarios se filtran según el turno seleccionado y se usan en asistencia, dashboards y reportes.</p>
             </div>
             <Select
               label="Jefatura inmediata / supervisor inmediato"
@@ -847,7 +993,11 @@ export default function EmployeeFormPage({ mode }: Props) {
 
           <div className="rounded-xl bg-white/5 border border-white/10 p-4 space-y-3">
             <div className="flex items-center gap-3">
-              <button type="button" onClick={() => set('is_org_unit_leader', !form.is_org_unit_leader)} className={`w-10 h-6 rounded-full transition-colors flex items-center ${form.is_org_unit_leader ? 'bg-blue-500 justify-end' : 'bg-white/20 justify-start'}`}>
+              <button
+                type="button"
+                onClick={() => set('is_org_unit_leader', !form.is_org_unit_leader)}
+                className={`w-10 h-6 rounded-full transition-colors flex items-center ${form.is_org_unit_leader ? 'bg-blue-500 justify-end' : 'bg-white/20 justify-start'}`}
+              >
                 <span className="w-5 h-5 mx-0.5 rounded-full bg-white shadow" />
               </button>
               <div className="flex items-center gap-2">
@@ -889,6 +1039,19 @@ export default function EmployeeFormPage({ mode }: Props) {
         </div>
       </Card>
 
+      {/* ── Botón guardar sticky ─────────────────────────────────────────── */}
+      <div className="sticky bottom-4 flex justify-end z-10">
+        <Button
+          leftIcon={save.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+          onClick={() => save.mutate()}
+          disabled={save.isPending}
+          className="shadow-2xl shadow-purple-900/40"
+        >
+          {save.isPending ? 'Guardando…' : 'Guardar cambios'}
+        </Button>
+      </div>
+
+      {/* ── Modal vacaciones ───────────────────────────────────────────── */}
       <Modal open={vacOpen} onClose={() => setVacOpen(false)} title="Periodo de vacaciones">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input label="Inicio" type="date" value={form.vacation_start ?? ''} onChange={(e) => set('vacation_start', e.target.value || null)} />

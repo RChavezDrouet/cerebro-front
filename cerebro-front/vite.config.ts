@@ -12,7 +12,7 @@ export default defineConfig({
   },
 
   server: {
-    port: 5173,
+    port: 3000,
     strictPort: true,
 
     // Si quieres quitar el overlay rojo de Vite:

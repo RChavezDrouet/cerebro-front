@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Edit3, Camera, MapPin, Briefcase, Star, Workflow, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Edit3, Camera, MapPin, Briefcase, Star, Workflow, ShieldCheck, Smartphone, LocateFixed, CheckCircle2, Clock3 } from 'lucide-react'
 
 import { supabase, ATT_SCHEMA } from '@/config/supabase'
 import { useAuth } from '@/contexts/AuthContext'
@@ -30,6 +30,8 @@ const DAYS_LABEL: Record<string, string> = {
 }
 
 async function fetchEmployee(tenantId: string, id: string): Promise<any> {
+  let baseRow: any = null
+
   const v = await supabase
     .schema('public')
     .from('v_employees_full')
@@ -37,23 +39,66 @@ async function fetchEmployee(tenantId: string, id: string): Promise<any> {
     .eq('tenant_id', tenantId)
     .eq('id', id)
     .single()
-  if (!v.error) return v.data
 
-  const { data, error } = await supabase
-    .schema('public')
-    .from('employees')
-    .select('*')
-    .eq('tenant_id', tenantId)
-    .eq('id', id)
-    .single()
-  if (error) throw error
-  return data
+  if (!v.error) {
+    baseRow = v.data
+  } else {
+    const { data, error } = await supabase
+      .schema('public')
+      .from('employees')
+      .select('*')
+      .eq('tenant_id', tenantId)
+      .eq('id', id)
+      .single()
+
+    if (error) throw error
+    baseRow = data
+  }
+
+  const [contact, pwaSettings] = await Promise.all([
+    fetchEmployeeContact(tenantId, id),
+    fetchEmployeePwaSelfServiceSettings(tenantId, id),
+  ])
+
+  return {
+    ...baseRow,
+    phone: contact?.phone ?? null,
+    address: contact?.address ?? null,
+    pwa_self_service_enabled: pwaSettings?.pwa_self_service_enabled ?? false,
+    pwa_self_service_locked: pwaSettings?.pwa_self_service_locked ?? false,
+    pwa_self_service_completed_at: pwaSettings?.pwa_self_service_completed_at ?? null,
+    geofence_radius_m: pwaSettings?.geofence_radius_m ?? baseRow?.geofence_radius_m ?? null,
+    geofence_lat: pwaSettings?.geofence_lat ?? baseRow?.geofence_lat ?? null,
+    geofence_lng: pwaSettings?.geofence_lng ?? baseRow?.geofence_lng ?? null,
+    allow_remote_pwa: pwaSettings?.allow_remote_pwa ?? baseRow?.allow_remote_pwa ?? null,
+  }
 }
 
 async function signedPhoto(path?: string | null): Promise<string | null> {
   if (!path) return null
   const { data } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(path, 60 * 30)
   return data?.signedUrl ?? null
+}
+
+async function fetchEmployeePwaSelfServiceSettings(tenantId: string, employeeId: string) {
+  const { data, error } = await supabase.schema(ATT_SCHEMA).rpc('get_employee_pwa_self_service_settings', {
+    p_tenant_id: tenantId,
+    p_employee_id: employeeId,
+  })
+  if (error) return null
+  return (Array.isArray(data) ? data[0] : data) ?? null
+}
+
+async function fetchEmployeeContact(tenantId: string, employeeId: string) {
+  const { data, error } = await supabase
+    .schema('public')
+    .from('employees')
+    .select('id,phone,address')
+    .eq('tenant_id', tenantId)
+    .eq('id', employeeId)
+    .maybeSingle()
+  if (error) return null
+  return data ?? null
 }
 
 async function fetchShiftLookup(tenantId: string) {
@@ -187,6 +232,8 @@ export default function EmployeeDetailPage() {
             <div className="card p-4"><div className="text-white/60">Fecha contratación</div><div className="mt-2 font-semibold">{e.hire_date ?? '—'}</div></div>
             <div className="card p-4"><div className="text-white/60">Sueldo</div><div className="mt-2 font-semibold">{e.salary != null ? Number(e.salary).toFixed(2) : '—'}</div></div>
             <div className="card p-4"><div className="text-white/60">Email</div><div className="mt-2 font-semibold">{e.email ?? '—'}</div></div>
+            <div className="card p-4"><div className="text-white/60">Teléfono</div><div className="mt-2 font-semibold">{e.phone ?? '—'}</div></div>
+            <div className="card p-4 md:col-span-2"><div className="text-white/60">Dirección</div><div className="mt-2 font-semibold">{e.address ?? '—'}</div></div>
             <div className="card p-4"><div className="text-white/60">Rol de acceso Base</div><div className="mt-2 font-semibold">{accessRoleLabel(accessInfo.data?.role)}</div><div className="mt-1 text-xs text-white/50">{accessInfo.data?.role === 'tenant_admin' ? 'Administrador HRCloud único por tenant' : accessInfo.data?.has_access ? 'Con credenciales activas' : 'Sin acceso administrativo'}</div></div>
             <div className="card p-4"><div className="text-white/60">Jefatura organizacional</div><div className="mt-2 font-semibold">{orgAssignment.data?.is_unit_leader ? (leaderLevelLabel ? `Jefe de ${leaderLevelLabel}` : 'Jefe de unidad') : 'No aplica'}</div></div>
           </div>
@@ -230,6 +277,32 @@ export default function EmployeeDetailPage() {
               )}
             </div>
           )}
+        </div>
+      </Card>
+
+      <Card title="Autogestión PWA y GPS del puesto" subtitle="Controlado desde Base y ejecutado una sola vez por el empleado en PWA" actions={<Smartphone size={18} className="text-white/60" />}>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+          <div className="card p-4">
+            <div className="text-white/60">Autogestión PWA</div>
+            <div className="mt-2 font-semibold">{e.pwa_self_service_enabled ? 'Habilitada' : 'Deshabilitada'}</div>
+            <div className="mt-1 text-xs text-white/50">{e.allow_remote_pwa ? 'Con acceso remoto / PWA' : 'Sin acceso remoto adicional'}</div>
+          </div>
+          <div className="card p-4">
+            <div className="text-white/60">Estado de edición</div>
+            <div className="mt-2 font-semibold flex items-center gap-2">
+              {e.pwa_self_service_locked ? <CheckCircle2 size={14} className="text-emerald-300" /> : <Clock3 size={14} className="text-amber-200" />}
+              {e.pwa_self_service_locked ? 'Bloqueado luego del guardado' : e.pwa_self_service_enabled ? 'Pendiente de completar' : 'No aplica'}
+            </div>
+            {e.pwa_self_service_completed_at && <div className="mt-1 text-xs text-white/50">Completado: {new Date(e.pwa_self_service_completed_at).toLocaleString()}</div>}
+          </div>
+          <div className="card p-4">
+            <div className="text-white/60">Rango GPS válido</div>
+            <div className="mt-2 font-semibold flex items-center gap-2"><LocateFixed size={14} className="text-cyan-300" /> {e.geofence_radius_m != null ? `${Number(e.geofence_radius_m).toFixed(0)} m` : '—'}</div>
+          </div>
+          <div className="card p-4 md:col-span-3">
+            <div className="text-white/60">GPS registrado por el empleado</div>
+            <div className="mt-2 font-semibold">{(e.geofence_lat != null && e.geofence_lng != null) ? `${Number(e.geofence_lat).toFixed(6)}, ${Number(e.geofence_lng).toFixed(6)}` : 'Aún no registrado en PWA'}</div>
+          </div>
         </div>
       </Card>
 

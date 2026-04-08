@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── CSS Variables de Branding — se sobrescriben por BrandingProvider ─── */
+:root {
+  --color-primary:   #0056E6;
+  --color-secondary: #00B3FF;
+  --color-accent:    #7C3AED;
+  --color-sidebar:   #0F2744;
+  --color-header:    #0D1B2A;
+  --color-bg:        #0D1B2A;
+  --color-surface:   #0F2744;
+  --color-border:    rgba(255,255,255,0.08);
+  --color-text:      #F1F5F9;
+  --color-muted:     #94A3B8;
+  --color-on-primary: #FFFFFF;
+}
+
+/* Tema claro */
+.theme-light {
+  --color-bg:      #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-border:  rgba(0,0,0,0.08);
+  --color-text:    #0D1B2A;
+  --color-muted:   #64748B;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(128,128,128,0.2); border-radius: 3px; }
+
+/* Animaciones */
+.animate-fade-in  { animation: fadeIn  0.3s ease-out; }
+.animate-slide-up { animation: slideUp 0.4s ease-out; }
+.animate-shake    { animation: shake   0.4s ease; }
+.animate-pulse-slow { animation: pulse 3s cubic-bezier(0.4,0,0.6,1) infinite; }
+
+@keyframes fadeIn   { from{opacity:0} to{opacity:1} }
+@keyframes slideUp  { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+@keyframes shake    { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+
+/* Botones con variable CSS */
+.btn-primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.btn-primary:hover { filter: brightness(1.1); }
+
+/* Prevent paste en campos sensibles */
+input[data-no-paste="true"] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+
+/* Selects oscuros para que las opciones sean legibles en Windows/Chrome */
+select {
+  color: #ffffff;
+  background-color: rgba(15, 23, 42, 0.9);
+}
+
+select option,
+select optgroup {
+  color: #ffffff;
+  background-color: #0f172a;
+}
+
+select option:checked,
+select option:hover {
+  color: #ffffff;
+  background-color: #1e293b;
+}

@@ -133,7 +133,7 @@ export const FaceCaptureModal: React.FC<Props> = ({ open, onClose, onCaptured })
         {error && (
           <div className="nova-toast error" style={{ marginBottom: 12 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 3 22 21H2L12 3Z"/><line x1="12" y1="9" x2="12" y2="14"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              <path d="M12 3 22 21H2L12 3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
             </svg>
             {error}
           </div>

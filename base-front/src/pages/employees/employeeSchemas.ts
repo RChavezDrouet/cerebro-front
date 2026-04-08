@@ -1,6 +1,7 @@
 /**
  * employeeSchemas.ts — Base PWA
- * Ampliado para jerarquía organizacional, supervisor inmediato y asignación de turnos.
+ * Ampliado para jerarquía organizacional, supervisor inmediato,
+ * autogestión PWA y registro único de georreferenciación del puesto de trabajo.
  */
 import { z } from 'zod'
 
@@ -32,6 +33,8 @@ export const employeeFormSchema = z.object({
   first_name: z.string().min(2, 'Nombre requerido').max(100),
   last_name: z.string().min(2, 'Apellido requerido').max(100),
   email: z.string().email('Correo inválido'),
+  phone: z.string().max(30, 'Teléfono demasiado largo').nullable().optional(),
+  address: z.string().max(300, 'Dirección demasiado larga').nullable().optional(),
   identification: z.string().min(5, 'Cédula/ID requerido').max(20).regex(/^\d+$/, 'Cédula / ID debe contener solo números'),
   department_id: z.string().uuid().nullable().optional(),
   hire_date: z.string().nullable().optional(),
@@ -57,6 +60,14 @@ export const employeeFormSchema = z.object({
   work_shift_id: z.string().uuid().nullable().optional(),
   access_role: z.enum(['employee', 'assistant', 'auditor', 'tenant_admin']).default('employee'),
 
+  pwa_self_service_enabled: z.boolean().default(false),
+  geofence_radius_m: z.number().positive('El rango GPS debe ser mayor a 0').nullable().optional(),
+  reset_pwa_self_service_lock: z.boolean().default(false),
+  pwa_self_service_locked: z.boolean().default(false),
+  pwa_self_service_completed_at: z.string().nullable().optional(),
+  geofence_lat: z.number().nullable().optional(),
+  geofence_lng: z.number().nullable().optional(),
+
   password: z.string().optional(),
   password_confirm: z.string().optional(),
 }).superRefine((d, ctx) => {
@@ -79,6 +90,10 @@ export const employeeFormSchema = z.object({
 
   if (d.is_org_unit_leader && !d.lead_org_unit_id && !d.org_unit_id) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['lead_org_unit_id'], message: 'Selecciona la unidad de la que será jefe' })
+  }
+
+  if (d.pwa_self_service_enabled && (!d.geofence_radius_m || Number(d.geofence_radius_m) <= 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['geofence_radius_m'], message: 'Define el rango válido de georreferenciación en metros' })
   }
 })
 

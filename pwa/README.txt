@@ -1,15 +1,16 @@
-ZIP OVERLAY DE REEMPLAZO
+PATCH: Solo Estructura Organizacional
 
-Contenido:
-- pwa/: archivos nuevos y modificados para la PWA
-- base-front/: archivos nuevos y modificados para Base
-- supabase/functions/base-create-employee-user/index.ts
-- sql/: scripts numerados
+Archivos para reemplazar:
+- src/App.tsx
+- src/pages/config/ConfigHomePage.tsx
+- src/pages/config/CompanyConfigPage.tsx
 
-Uso:
-1) Hacer backup de tus proyectos actuales.
-2) Descomprimir este ZIP encima de la carpeta padre donde viven pwa/, base-front/ y supabase/.
-3) Aceptar reemplazo de archivos.
-4) Ejecutar los SQL en el orden del archivo sql/00_README_ORDEN.txt o usar HRCloud_SQL_Ordenado_20260310.sql.
-5) Desplegar la Edge Function base-create-employee-user.
-6) Compilar y probar.
+Objetivo:
+- Quitar Departamentos del flujo operativo.
+- Mantener Estructura Organizacional como fuente única de verdad.
+- Corregir la navegación de Parámetros de Marcación para que NO abra biométricos.
+
+IMPORTANTE:
+- Este patch no borra la tabla attendance.departments.
+- Primero deja de usarse en UI. La depuración física de BD debe hacerse en una fase posterior.
+- Si el EmployeeFormPage todavía muestra departamento, hay que ajustarlo en un siguiente paso.

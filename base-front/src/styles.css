@@ -2,31 +2,105 @@
 @tailwind components;
 @tailwind utilities;
 
-:root{
-  --bg: #0b1220;
-  --card: rgba(255,255,255,0.06);
-  --text: rgba(255,255,255,0.92);
-  --muted: rgba(255,255,255,0.60);
-  --border: rgba(255,255,255,0.12);
-  --primary: #6d28d9;
-  --danger: #ef4444;
+/* ─── Variables globales ──────────────────────────────────────────────────── */
+:root {
+  /* Fondo y superficies */
+  --bg:              #0b1220;
+  --color-bg:        #0b1220;
+  --color-surface:   rgba(255,255,255,0.06);
+  --color-sidebar:   #0F2744;
+  --color-header:    #0D1B2A;
+  --card:            rgba(255,255,255,0.06);
+
+  /* Texto */
+  --text:            rgba(255,255,255,0.92);
+  --muted:           rgba(255,255,255,0.60);
+  --color-text:      rgba(255,255,255,0.92);
+  --color-muted:     rgba(255,255,255,0.60);
+
+  /* Bordes */
+  --border:          rgba(255,255,255,0.12);
+  --color-border:    rgba(255,255,255,0.12);
+
+  /* Colores de marca */
+  --primary:         #6d28d9;
+  --color-primary:   #6d28d9;
+  --color-secondary: #38bdf8;
+  --color-accent:    #7C3AED;
+  --color-on-primary: #FFFFFF;
+
+  /* Semánticos */
+  --danger:          #ef4444;
 }
+
+/* ─── Tema claro (futuro) ─────────────────────────────────────────────────── */
+.theme-light {
+  --bg:            #F8FAFC;
+  --color-bg:      #F8FAFC;
+  --color-surface: #FFFFFF;
+  --card:          #FFFFFF;
+  --border:        rgba(0,0,0,0.08);
+  --color-border:  rgba(0,0,0,0.08);
+  --text:          #0D1B2A;
+  --color-text:    #0D1B2A;
+  --muted:         #64748B;
+  --color-muted:   #64748B;
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
 
 html, body { height: 100%; }
 
 body {
   margin: 0;
-  background: radial-gradient(1200px 700px at 20% 10%, rgba(109,40,217,0.35), transparent 60%),
-              radial-gradient(900px 600px at 80% 0%, rgba(56,189,248,0.25), transparent 55%),
-              radial-gradient(900px 600px at 60% 90%, rgba(34,197,94,0.16), transparent 55%),
-              var(--bg);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  background:
+    radial-gradient(1200px 700px at 20% 10%, rgba(109,40,217,0.35), transparent 60%),
+    radial-gradient(900px 600px at 80% 0%,  rgba(56,189,248,0.25), transparent 55%),
+    radial-gradient(900px 600px at 60% 90%, rgba(34,197,94,0.16),  transparent 55%),
+    var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.3s ease, color 0.3s ease;
 }
 
-.card{ background: var(--card); border: 1px solid var(--border); border-radius: 1rem; }
-.glass{ backdrop-filter: blur(10px); }
+/* ─── Utilidades de componentes ───────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+}
 
-::-webkit-scrollbar{ width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb{ background: rgba(255,255,255,0.12); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover{ background: rgba(255,255,255,0.18); }
+.glass { backdrop-filter: blur(10px); }
+
+.btn-primary {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.btn-primary:hover { filter: brightness(1.1); }
+
+/* ─── Animaciones ─────────────────────────────────────────────────────────── */
+.animate-fade-in    { animation: fadeIn   0.3s ease-out; }
+.animate-slide-up   { animation: slideUp  0.4s ease-out; }
+.animate-shake      { animation: shake    0.4s ease; }
+.animate-pulse-slow { animation: pulse    3s cubic-bezier(0.4,0,0.6,1) infinite; }
+
+@keyframes fadeIn  { from { opacity: 0 }                          to { opacity: 1 } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes shake   { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-6px) } 75% { transform: translateX(6px) } }
+
+/* ─── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.12); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
+
+/* ─── Selects legibles en Windows/Chrome ──────────────────────────────────── */
+select                       { color: #ffffff; background-color: rgba(15,23,42,0.9); }
+select option, select optgroup { color: #ffffff; background-color: #0f172a; }
+select option:checked,
+select option:hover          { color: #ffffff; background-color: #1e293b; }
+
+/* ─── Campos sin paste ────────────────────────────────────────────────────── */
+input[data-no-paste="true"] { user-select: none; -webkit-user-select: none; }

@@ -24,7 +24,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, loading, error }) => {
 
   const handleForgot = async () => {
     setResetMsg(null)
-    const e = (email || '').trim().toLowerCase()
+    const e = (email || '').trim()
     if (!e || !e.includes('@')) {
       setResetMsg('Ingresa tu correo y pulsa “Olvidé mi contraseña”.')
       return
@@ -32,17 +32,9 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, loading, error }) => {
 
     try {
       setResetLoading(true)
-
-      // IMPORTANTÍSIMO: redirect_to debe ser el origen actual (http://localhost:5175)
       await supabase.functions.invoke('base-reset-password', {
-        body: {
-          action: 'request_reset',
-          email: e,
-          app: 'pwa',
-          redirect_to: window.location.origin,
-        },
+        body: { action: 'request_reset', email: e, app: 'pwa' },
       })
-
       // Anti-enumeración: mismo mensaje siempre
       setResetMsg('Si el correo está registrado, te enviaremos un enlace para cambiar tu contraseña.')
     } catch {
@@ -100,6 +92,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, loading, error }) => {
           animation: 'logo-glow 3s ease-in-out infinite',
           position: 'relative',
         }}>
+          {/* inner highlight */}
           <div style={{
             position: 'absolute', top: 3, left: 3, right: 3,
             height: '40%', borderRadius: '18px 18px 60% 60%',
@@ -256,6 +249,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin, loading, error }) => {
         </form>
       </div>
 
+      {/* Feature badges */}
       <div className="anim-fade-up" style={{
         marginTop: 28, display: 'flex', gap: 12, flexWrap: 'wrap',
         justifyContent: 'center', position: 'relative', zIndex: 1,

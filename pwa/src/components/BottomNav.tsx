@@ -6,6 +6,7 @@ type Tab = 'clock' | 'history' | 'requests' | 'profile'
 interface BottomNavProps {
   activeTab: Tab
   onChangeTab: (tab: Tab) => void
+  visibleTabs?: Tab[]
 }
 
 const ClockIcon = ({ active }: { active: boolean }) => (
@@ -44,7 +45,9 @@ const tabs: { id: Tab; label: string; Icon: React.FC<{ active: boolean }> }[] = 
   { id: 'profile', label: 'PERFIL', Icon: UserIcon },
 ]
 
-const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab }) => {
+const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab, visibleTabs }) => {
+  const allowed = visibleTabs?.length ? tabs.filter(tab => visibleTabs.includes(tab.id)) : tabs
+
   return (
     <nav className="nova-bottom-nav">
       <div style={{
@@ -52,7 +55,7 @@ const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onChangeTab }) => {
         display: 'flex', alignItems: 'center', justifyContent: 'space-around',
         padding: '8px 0'
       }}>
-        {tabs.map(({ id, label, Icon }) => {
+        {allowed.map(({ id, label, Icon }) => {
           const isActive = activeTab === id
           return (
             <button

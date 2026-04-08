@@ -1,180 +1,204 @@
-import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1'
+/**
+ * base-create-employee-user — alta o actualización de acceso Base/PWA para empleados.
+ *
+ * Reglas clave:
+ *  - Solo tenant_admin del mismo tenant puede operar.
+ *  - El rol administrativo es independiente de la jefatura organizacional.
+ *  - Solo puede existir un tenant_admin activo por tenant.
+ *  - Si el empleado ya tiene usuario, la función actualiza rol / email sin recrearlo.
+ */
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
+const URL_ = Deno.env.get('SUPABASE_URL')!
+const SVC = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-function generateTemporaryPassword(email: string) {
-  const base = (email.split('@')[0] || 'hrcl').replace(/[^a-zA-Z0-9]/g, '').slice(0, 6) || 'hrcl'
-  const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 6)
-  return `${base}#${suffix}`
+type AccessRole = 'employee' | 'assistant' | 'auditor' | 'tenant_admin'
+const ALLOWED_ROLES = new Set<AccessRole>(['employee', 'assistant', 'auditor', 'tenant_admin'])
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: cors })
+
+  try {
+    const authH = req.headers.get('Authorization') ?? ''
+    if (!authH.startsWith('Bearer ')) return err('Unauthorized', 401)
+
+    const admin = createClient(URL_, SVC)
+    const jwt = authH.replace('Bearer ', '')
+    const { data: { user: caller } } = await admin.auth.getUser(jwt)
+    if (!caller) return err('Invalid token', 401)
+
+    const callerAccess = await resolveCallerAccess(admin, caller.id)
+    if (!callerAccess || callerAccess.role !== 'tenant_admin') {
+      return err('Forbidden: se requiere rol tenant_admin', 403)
+    }
+    const callerTenantId = callerAccess.tenant_id
+
+    const body = await req.json()
+    const employee_id = String(body?.employee_id || '')
+    const email = String(body?.email || '').trim().toLowerCase()
+    const password = body?.password ? String(body.password) : null
+    const requestedRole = normalizeRole(body?.role)
+    const send_welcome_email = body?.send_welcome_email === true
+
+    if (!employee_id) return err('employee_id requerido', 400)
+    if (!email || !email.includes('@')) return err('Email inválido', 400)
+    if (!ALLOWED_ROLES.has(requestedRole)) return err('Rol inválido', 400)
+
+    const { data: emp, error: empErr } = await admin
+      .schema('public')
+      .from('employees')
+      .select('id,tenant_id,user_id,first_name,last_name,email')
+      .eq('id', employee_id)
+      .single()
+
+    if (empErr || !emp) return err('Empleado no encontrado', 404)
+    if (emp.tenant_id !== callerTenantId) return err('Forbidden: empleado de otro tenant', 403)
+
+    if (requestedRole === 'tenant_admin') {
+      await ensureSingleTenantAdmin(admin, callerTenantId, employee_id, emp.user_id ?? null)
+    }
+
+    let userId = emp.user_id as string | null
+    let created = false
+
+    if (!userId) {
+      if (!password || password.length < 8) return err('Password muy corto', 400)
+
+      const { data: { user: newUser }, error: createErr } = await admin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          tenant_id: callerTenantId,
+          employee_id,
+          role: requestedRole,
+          first_login: true,
+        },
+      })
+      if (createErr || !newUser) return err('Error creando usuario: ' + (createErr?.message ?? 'unknown'), 500)
+      userId = newUser.id
+      created = true
+    } else {
+      const updatePayload: Record<string, unknown> = {
+        email,
+        user_metadata: {
+          tenant_id: callerTenantId,
+          employee_id,
+          role: requestedRole,
+          first_login: false,
+        },
+      }
+      if (password && password.length >= 8) updatePayload.password = password
+      const { error: updateErr } = await admin.auth.admin.updateUserById(userId, updatePayload)
+      if (updateErr) return err('No se pudo actualizar el usuario: ' + updateErr.message, 500)
+    }
+
+    try {
+      await admin
+        .schema('public')
+        .from('employees')
+        .update({ user_id: userId, email })
+        .eq('id', employee_id)
+    } catch (_) {}
+
+    await upsertUserAccounts(admin, callerTenantId, userId!, employee_id, requestedRole)
+    await upsertMembership(admin, callerTenantId, userId!, requestedRole)
+
+    if (send_welcome_email && created && password) {
+      try {
+        await admin.functions.invoke('base-send-email', {
+          body: {
+            tenant_id: callerTenantId,
+            to_email: email,
+            template: 'welcome',
+            variables: {
+              name: `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim(),
+              email,
+              temp_password: password,
+            },
+          },
+        })
+      } catch (emailErr: any) {
+        console.error('[EMAIL]', emailErr?.message || emailErr)
+      }
+    }
+
+    return ok({ success: true, user_id: userId, role: requestedRole, created })
+  } catch (e: any) {
+    console.error('[base-create-employee-user]', e?.message || e)
+    return err(e?.message || 'Internal error', 500)
+  }
+})
+
+function normalizeRole(role: unknown): AccessRole {
+  const value = String(role || '').trim()
+  if (value === 'assistant' || value === 'auditor' || value === 'tenant_admin') return value
+  return 'employee'
 }
 
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+async function resolveCallerAccess(admin: ReturnType<typeof createClient>, userId: string): Promise<{ tenant_id: string; role: string } | null> {
+  try {
+    const { data } = await admin.schema('attendance').from('user_accounts').select('tenant_id,role,is_active').eq('user_id', userId).maybeSingle()
+    if ((data as any)?.tenant_id && (data as any)?.is_active !== false) return { tenant_id: (data as any).tenant_id, role: (data as any).role }
+  } catch (_) {}
+
+  try {
+    const { data } = await admin.schema('attendance').from('memberships').select('tenant_id,role').eq('user_id', userId).maybeSingle()
+    if ((data as any)?.tenant_id) return { tenant_id: (data as any).tenant_id, role: (data as any).role }
+  } catch (_) {}
+
+  return null
+}
+
+async function ensureSingleTenantAdmin(admin: ReturnType<typeof createClient>, tenantId: string, employeeId: string, userId: string | null) {
+  try {
+    const { data } = await admin.schema('attendance').from('user_accounts').select('employee_id,user_id,role,is_active').eq('tenant_id', tenantId).eq('role', 'tenant_admin')
+    const conflict = (data ?? []).find((row: any) => row.is_active !== false && row.employee_id !== employeeId && row.user_id !== userId)
+    if (conflict) throw new Error('TENANT_ADMIN_ALREADY_EXISTS')
+  } catch (e: any) {
+    if (String(e?.message || '') === 'TENANT_ADMIN_ALREADY_EXISTS') throw e
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
-
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Missing bearer token' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const token = authHeader.replace('Bearer ', '')
-    const { data: authData, error: authError } = await supabaseAdmin.auth.getUser(token)
-
-    if (authError || !authData.user) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const callerId = authData.user.id
-    const body = await req.json()
-
-    const tenantId = String(body.tenant_id || '')
-    const employeeId = String(body.employee_id || '')
-    const email = String(body.email || '').trim().toLowerCase()
-    const role = String(body.role || 'employee')
-    const tempPassword = String(body.temp_password || '').trim() || generateTemporaryPassword(email)
-
-    if (!tenantId || !employeeId || !email) {
-      return new Response(JSON.stringify({ error: 'tenant_id, employee_id y email son obligatorios' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const [{ data: callerProfile }, { data: callerMembership }] = await Promise.all([
-      supabaseAdmin.from('profiles').select('tenant_id,role').eq('id', callerId).maybeSingle(),
-      supabaseAdmin.schema('attendance').from('memberships').select('tenant_id,role').eq('user_id', callerId).maybeSingle(),
-    ])
-
-    const isGlobalAdmin = callerProfile?.role === 'admin'
-    const isTenantAdmin = callerMembership?.role === 'tenant_admin' && callerMembership?.tenant_id === tenantId
-
-    if (!isGlobalAdmin && !isTenantAdmin) {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const usersPage = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 })
-    let existingUser = usersPage.data.users.find((u) => (u.email || '').toLowerCase() === email)
-
-    if (!existingUser) {
-      const created = await supabaseAdmin.auth.admin.createUser({
-        email,
-        password: tempPassword,
-        email_confirm: true,
-        user_metadata: { tenant_id: tenantId, role },
-      })
-
-      if (created.error || !created.data.user) {
-        return new Response(JSON.stringify({ error: created.error?.message || 'No se pudo crear auth user' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-
-      existingUser = created.data.user
-    } else {
-      const updated = await supabaseAdmin.auth.admin.updateUserById(existingUser.id, {
-        password: tempPassword,
-        user_metadata: {
-          ...(existingUser.user_metadata || {}),
-          tenant_id: tenantId,
-          role,
-        },
-      })
-
-      if (updated.error || !updated.data.user) {
-        return new Response(JSON.stringify({ error: updated.error?.message || 'No se pudo actualizar auth user' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-
-      existingUser = updated.data.user
-    }
-
-    const userId = existingUser.id
-
-    const { error: profileError } = await supabaseAdmin.from('profiles').upsert({
-      id: userId,
-      tenant_id: tenantId,
-      role,
-      first_login_pending: true,
-      is_active: true,
-    })
-
-    if (profileError) {
-      return new Response(JSON.stringify({ error: profileError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const { error: membershipError } = await supabaseAdmin
-      .schema('attendance')
-      .from('memberships')
-      .upsert({
-        tenant_id: tenantId,
-        user_id: userId,
-        role,
-      })
-
-    if (membershipError) {
-      return new Response(JSON.stringify({ error: membershipError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const { error: employeeError } = await supabaseAdmin
-      .schema('attendance')
-      .from('employees')
-      .update({ user_id: userId, first_login_pending: true })
-      .eq('id', employeeId)
-      .eq('tenant_id', tenantId)
-
-    if (employeeError) {
-      return new Response(JSON.stringify({ error: employeeError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        user_id: userId,
-        email,
-        temporary_password: tempPassword,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    )
-  } catch (err: any) {
-    return new Response(JSON.stringify({ error: err?.message || 'Unexpected error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    const { data } = await admin.schema('attendance').from('memberships').select('user_id,role').eq('tenant_id', tenantId).eq('role', 'tenant_admin')
+    const conflict = (data ?? []).find((row: any) => row.user_id !== userId)
+    if (conflict) throw new Error('TENANT_ADMIN_ALREADY_EXISTS')
+  } catch (e: any) {
+    if (String(e?.message || '') === 'TENANT_ADMIN_ALREADY_EXISTS') throw e
   }
-})
+}
+
+async function upsertUserAccounts(admin: ReturnType<typeof createClient>, tenantId: string, userId: string, employeeId: string, role: AccessRole) {
+  try {
+    const { error } = await admin.schema('attendance').from('user_accounts').upsert({
+      tenant_id: tenantId,
+      user_id: userId,
+      employee_id: employeeId,
+      role,
+      is_active: true,
+    }, { onConflict: 'tenant_id,user_id' })
+    if (error) console.warn('[user_accounts]', error.message)
+  } catch (e: any) {
+    console.warn('[user_accounts]', e?.message || e)
+  }
+}
+
+async function upsertMembership(admin: ReturnType<typeof createClient>, tenantId: string, userId: string, role: AccessRole) {
+  try {
+    const { error } = await admin.schema('attendance').from('memberships').upsert({
+      tenant_id: tenantId,
+      user_id: userId,
+      role,
+    }, { onConflict: 'tenant_id,user_id' })
+    if (error) console.warn('[memberships]', error.message)
+  } catch (e: any) {
+    console.warn('[memberships]', e?.message || e)
+  }
+}
+
+const ok = (d: unknown) => new Response(JSON.stringify(d), { headers: { ...cors, 'Content-Type': 'application/json' } })
+const err = (m: string, s = 400) => new Response(JSON.stringify({ error: m }), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } })

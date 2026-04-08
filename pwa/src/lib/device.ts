@@ -1,14 +1,23 @@
-const KEY = 'hrcloud_pwa_device_id'
+// =============================================
+// HRCloud Attendance PWA - Basic Device Fingerprint
+// =============================================
+// Objetivo: generar un device_id estable (best-effort) SIN invadir privacidad.
+// - Se guarda en localStorage
+// - No usa técnicas agresivas (canvas fingerprinting, etc.)
 
-export function getOrCreateDeviceId() {
-  const existing = localStorage.getItem(KEY)
-  if (existing) return existing
+import { v4 as uuidv4 } from 'uuid'
 
-  const value =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+const KEY = 'hrcloud_device_id_v1'
 
-  localStorage.setItem(KEY, value)
-  return value
+export function getOrCreateDeviceId(): string {
+  try {
+    const existing = localStorage.getItem(KEY)
+    if (existing && existing.length > 10) return existing
+    const id = uuidv4()
+    localStorage.setItem(KEY, id)
+    return id
+  } catch {
+    // Fallback si storage está bloqueado
+    return uuidv4()
+  }
 }
