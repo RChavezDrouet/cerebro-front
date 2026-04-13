@@ -16,6 +16,7 @@ import EmployeeDetailPage from '@/pages/employees/EmployeeDetailPage'
 
 import AttendanceHomePage from '@/pages/attendance/AttendanceHomePage'
 import DailyAttendanceReportPage from '@/pages/attendance/DailyAttendanceReportPage'
+import AttendanceNoveltiesPage from '@/pages/attendance/AttendanceNoveltiesPage'
 import UsbImportPage from '@/pages/attendance/UsbImportPage'
 
 import ConfigHomePage from '@/pages/config/ConfigHomePage'
@@ -73,6 +74,7 @@ export default function App() {
 
           <Route path="/attendance" element={<AttendanceHomePage />} />
           <Route path="/attendance/daily" element={<DailyAttendanceReportPage />} />
+          <Route path="/attendance/novelties" element={<AttendanceNoveltiesPage />} />
           <Route path="/attendance/usb-import" element={<UsbImportPage />} />
           <Route path="/attendance/detail" element={<Navigate to="/attendance/daily" replace />} />
 

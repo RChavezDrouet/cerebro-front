@@ -8,15 +8,16 @@ import {
   Loader2,
   Camera,
   MapPin,
-  Users,
-  Briefcase,
-  Lock,
-  Eye,
-  EyeOff,
   Building2,
   Workflow,
   ShieldCheck,
   KeyRound,
+  Smartphone,
+  LocateFixed,
+  CheckCircle2,
+  Clock3,
+  Eye,
+  EyeOff,
 } from 'lucide-react'
 
 import { supabase, ATT_SCHEMA } from '@/config/supabase'
@@ -40,7 +41,6 @@ import {
   saveEmployeeOrgAssignment,
   saveEmployeeShiftAssignment,
 } from '@/lib/orgStructure'
-
 import {
   employeeFormSchema,
   type EmployeeFormValues,
@@ -51,7 +51,12 @@ import {
   ACCESS_ROLE_OPTIONS as EMPLOYEE_ACCESS_ROLE_OPTIONS,
 } from './employeeSchemas'
 import { computeImageMetrics, validateMetrics } from '@/lib/facialQuality'
-import { ACCESS_ROLE_OPTIONS, accessRoleLabel, ensureUniqueTenantAdmin, fetchEmployeeAccessRole } from '@/lib/accessRoles'
+import {
+  ACCESS_ROLE_OPTIONS,
+  accessRoleLabel,
+  ensureUniqueTenantAdmin,
+  fetchEmployeeAccessRole,
+} from '@/lib/accessRoles'
 import { listBiometricDevicesConfig } from '@/services/biometricAliasesService'
 
 type Props = { mode: 'create' | 'edit' }
@@ -78,9 +83,7 @@ async function fetchEmployee(tenantId: string, id: string) {
   const v = await supabase
     .schema('public')
     .from('v_employees_full')
-    .select(
-      'id,tenant_id,employee_code,first_name,last_name,email,phone,address,identification,department_id,hire_date,salary,employment_status,facial_photo_url,vacation_start,vacation_end,lunch_tracking,work_modality,work_mode,presential_days,presential_schedule_id,entry_biometric_id,exit_biometric_id,location_mode,is_department_head'
-    )
+    .select('*')
     .eq('tenant_id', tenantId)
     .eq('id', id)
     .single()
@@ -99,6 +102,19 @@ async function fetchEmployee(tenantId: string, id: string) {
   return data
 }
 
+async function fetchEmployeeContact(tenantId: string, employeeId: string) {
+  const { data, error } = await supabase
+    .schema('public')
+    .from('employees')
+    .select('id,phone,address')
+    .eq('tenant_id', tenantId)
+    .eq('id', employeeId)
+    .maybeSingle()
+
+  if (error) return null
+  return data ?? null
+}
+
 async function fetchDepartments(tenantId: string) {
   const { data, error } = await supabase
     .schema('public')
@@ -106,8 +122,7 @@ async function fetchDepartments(tenantId: string) {
     .select('id,name')
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
-    .order('display_order', { ascending: true, nullsFirst: false })
-    .order('name')
+    .order('name', { ascending: true })
 
   if (error) throw error
   return data ?? []
@@ -117,11 +132,42 @@ async function fetchEmployeeAccess(tenantId: string, employeeId: string, fallbac
   return fetchEmployeeAccessRole(tenantId, employeeId, fallbackUserId)
 }
 
+async function fetchEmployeePwaSelfServiceSettings(employeeId: string) {
+  const { data, error } = await supabase
+    .schema(ATT_SCHEMA)
+    .rpc('get_employee_pwa_self_service_settings', {
+      p_employee_id: employeeId,
+    })
+
+  if (error) return null
+  return (Array.isArray(data) ? data[0] : data) ?? null
+}
+
+async function fetchEmployeeProfile(employeeId: string) {
+  const { data, error } = await supabase
+    .schema(ATT_SCHEMA)
+    .from('employee_profile')
+    .select(`
+      employee_id,
+      work_mode,
+      allow_remote_pwa,
+      onsite_days,
+      presential_schedule_id,
+      entry_biometric_id,
+      exit_biometric_id
+    `)
+    .eq('employee_id', employeeId)
+    .maybeSingle()
+
+  if (error) return null
+  return data ?? null
+}
+
 async function fetchFacialConfig(tenantId: string): Promise<FacialRecognitionConfig> {
   const { data, error } = await supabase
     .schema(ATT_SCHEMA)
     .from('facial_recognition_config')
-    .select('min_brightness,max_brightness,min_contrast,min_sharpness')
+    .select('min_brightness,max_brightness,min_contrast,min_sharpness,min_face_width_px,min_face_height_px,max_tilt_angle,capture_count,capture_interval_sec,match_threshold_percent')
     .eq('tenant_id', tenantId)
     .maybeSingle()
 
@@ -283,6 +329,14 @@ export default function EmployeeFormPage({ mode }: Props) {
     work_shift_id: null,
     access_role: 'employee',
 
+    pwa_self_service_enabled: false,
+    geofence_radius_m: null,
+    reset_pwa_self_service_lock: false,
+    pwa_self_service_locked: false,
+    pwa_self_service_completed_at: null,
+    geofence_lat: null,
+    geofence_lng: null,
+
     password: '',
     password_confirm: '',
   })
@@ -294,7 +348,12 @@ export default function EmployeeFormPage({ mode }: Props) {
   const [photoCheck, setPhotoCheck] = React.useState<{ ok: boolean; issues: string[] } | null>(null)
   const [showPass, setShowPass] = React.useState(false)
 
-  const deps = useQuery({ queryKey: ['deps', tenantId], enabled: !!tenantId, queryFn: () => fetchDepartments(tenantId!) })
+  const deps = useQuery({
+    queryKey: ['deps', tenantId],
+    enabled: !!tenantId,
+    queryFn: () => fetchDepartments(tenantId!),
+  })
+
   const facialCfg = useQuery({
     queryKey: ['facialCfg', tenantId],
     enabled: !!tenantId,
@@ -302,12 +361,42 @@ export default function EmployeeFormPage({ mode }: Props) {
     retry: 0,
     staleTime: 300_000,
   })
-  const bioDevices = useQuery({ queryKey: ['bioDevices', tenantId], enabled: !!tenantId, queryFn: () => fetchBiometricDevices(tenantId!) })
-  const schedules = useQuery({ queryKey: ['schedules', tenantId], enabled: !!tenantId, queryFn: () => fetchSchedules(tenantId!) })
-  const shifts = useQuery({ queryKey: ['shifts', tenantId], enabled: !!tenantId, queryFn: () => fetchShifts(tenantId!) })
-  const orgLevels = useQuery({ queryKey: ['org-levels', tenantId], enabled: !!tenantId, queryFn: () => fetchOrgLevelDefinitions(tenantId!) })
-  const orgUnits = useQuery({ queryKey: ['org-units', tenantId], enabled: !!tenantId, queryFn: () => fetchOrgUnits(tenantId!) })
-  const people = useQuery({ queryKey: ['employee-lookup', tenantId], enabled: !!tenantId, queryFn: () => fetchEmployeeLookup(tenantId!) })
+
+  const bioDevices = useQuery({
+    queryKey: ['bioDevices', tenantId],
+    enabled: !!tenantId,
+    queryFn: () => fetchBiometricDevices(tenantId!),
+  })
+
+  const schedules = useQuery({
+    queryKey: ['schedules', tenantId],
+    enabled: !!tenantId,
+    queryFn: () => fetchSchedules(tenantId!),
+  })
+
+  const shifts = useQuery({
+    queryKey: ['shifts', tenantId],
+    enabled: !!tenantId,
+    queryFn: () => fetchShifts(tenantId!),
+  })
+
+  const orgLevels = useQuery({
+    queryKey: ['org-levels', tenantId],
+    enabled: !!tenantId,
+    queryFn: () => fetchOrgLevelDefinitions(tenantId!),
+  })
+
+  const orgUnits = useQuery({
+    queryKey: ['org-units', tenantId],
+    enabled: !!tenantId,
+    queryFn: () => fetchOrgUnits(tenantId!),
+  })
+
+  const people = useQuery({
+    queryKey: ['employee-lookup', tenantId],
+    enabled: !!tenantId,
+    queryFn: () => fetchEmployeeLookup(tenantId!),
+  })
 
   const emp = useQuery({
     queryKey: ['emp', tenantId, id],
@@ -315,7 +404,12 @@ export default function EmployeeFormPage({ mode }: Props) {
     queryFn: () => fetchEmployee(tenantId!, id!),
   })
 
-  // Signed URL para foto existente
+  const contact = useQuery({
+    queryKey: ['employee-contact', tenantId, id],
+    enabled: !!tenantId && !!id && isEdit,
+    queryFn: () => fetchEmployeeContact(tenantId!, id!),
+  })
+
   const existingPhoto = useQuery({
     queryKey: ['emp-photo', (emp.data as any)?.facial_photo_url],
     enabled: !!(emp.data as any)?.facial_photo_url,
@@ -327,6 +421,18 @@ export default function EmployeeFormPage({ mode }: Props) {
     queryKey: ['employee-access', tenantId, id, (emp.data as any)?.user_id],
     enabled: !!tenantId && !!id && isEdit,
     queryFn: () => fetchEmployeeAccess(tenantId!, id!, (emp.data as any)?.user_id ?? null),
+  })
+
+  const pwaSettings = useQuery({
+    queryKey: ['employee-pwa-settings', tenantId, id],
+    enabled: !!tenantId && !!id && isEdit,
+    queryFn: () => fetchEmployeePwaSelfServiceSettings(id!),
+  })
+
+  const profile = useQuery({
+    queryKey: ['employee-profile', tenantId, id],
+    enabled: !!tenantId && !!id && isEdit,
+    queryFn: () => fetchEmployeeProfile(id!),
   })
 
   const orgAssignment = useQuery({
@@ -341,38 +447,65 @@ export default function EmployeeFormPage({ mode }: Props) {
     queryFn: () => fetchEmployeeShiftAssignment(tenantId!, id!),
   })
 
-  // ── Hydrate form with employee data on edit ──────────────────────────────────
+  React.useEffect(() => {
+    if (!photoFile) return
+    const url = URL.createObjectURL(photoFile)
+    setPhotoPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [photoFile])
+
   React.useEffect(() => {
     if (!emp.data) return
     const e: any = emp.data
+
     setForm((f) => ({
       ...f,
       employee_code: e.employee_code ?? e.employee_number ?? e.biometric_employee_code ?? '',
       first_name: e.first_name ?? '',
       last_name: e.last_name ?? '',
       email: e.email ?? '',
-      phone: e.phone ?? null,
-      address: e.address ?? null,
+      phone: contact.data?.phone ?? e.phone ?? null,
+      address: contact.data?.address ?? e.address ?? null,
       identification: e.identification ?? e.cedula ?? '',
       department_id: e.department_id ?? null,
       hire_date: e.hire_date ?? null,
       salary: e.salary != null ? Number(e.salary) : null,
-      employment_status: String(e.employment_status ?? 'ACTIVE').toUpperCase(),
+      employment_status: String(
+        e.employment_status ?? 'ACTIVE'
+      ).toUpperCase() as EmployeeFormValues['employment_status'],
       vacation_start: e.vacation_start ?? null,
       vacation_end: e.vacation_end ?? null,
       lunch_tracking: e.lunch_tracking ?? true,
       facial_photo_url: e.facial_photo_url ?? null,
-      work_modality: e.work_modality ?? e.work_mode ?? 'PRESENCIAL',
-      presential_days: e.presential_days ?? [],
-      presential_schedule_id: e.presential_schedule_id ?? null,
+
+      work_modality:
+        profile.data?.work_mode?.toUpperCase?.() ??
+        e.work_mode?.toUpperCase?.() ??
+        e.work_modality?.toUpperCase?.() ??
+        'PRESENCIAL',
+
+      presential_days: profile.data?.onsite_days ?? e.onsite_days ?? e.presential_days ?? [],
+      presential_schedule_id: profile.data?.presential_schedule_id ?? e.presential_schedule_id ?? null,
       location_mode: e.location_mode ?? 'INDISTINTO',
-      entry_biometric_id: e.entry_biometric_id ?? null,
-      exit_biometric_id: e.exit_biometric_id ?? null,
+      entry_biometric_id: profile.data?.entry_biometric_id ?? e.entry_biometric_id ?? null,
+      exit_biometric_id: profile.data?.exit_biometric_id ?? e.exit_biometric_id ?? null,
       is_department_head: e.is_department_head ?? false,
+
+      pwa_self_service_enabled: pwaSettings.data?.pwa_self_service_enabled ?? false,
+      geofence_radius_m:
+        pwaSettings.data?.geofence_radius_m != null ? Number(pwaSettings.data.geofence_radius_m) : null,
+      reset_pwa_self_service_lock: false,
+      pwa_self_service_locked: pwaSettings.data?.pwa_self_service_locked ?? false,
+      pwa_self_service_completed_at: pwaSettings.data?.pwa_self_service_completed_at ?? null,
+      geofence_lat:
+        pwaSettings.data?.geofence_lat != null ? Number(pwaSettings.data.geofence_lat) : null,
+      geofence_lng:
+        pwaSettings.data?.geofence_lng != null ? Number(pwaSettings.data.geofence_lng) : null,
+
       password: '',
       password_confirm: '',
     }))
-  }, [emp.data])
+  }, [emp.data, contact.data, pwaSettings.data, profile.data])
 
   React.useEffect(() => {
     if (!orgAssignment.data) return
@@ -387,38 +520,37 @@ export default function EmployeeFormPage({ mode }: Props) {
 
   React.useEffect(() => {
     if (!shiftAssignment.data) return
-    setForm((f) => ({ ...f, work_shift_id: shiftAssignment.data?.shift_id ?? null }))
+    setForm((f) => ({
+      ...f,
+      work_shift_id: shiftAssignment.data?.shift_id ?? null,
+    }))
   }, [shiftAssignment.data])
 
   React.useEffect(() => {
     if (!accessInfo.data) return
-    setForm((f) => ({ ...f, access_role: accessInfo.data?.role ?? 'employee' }))
+    setForm((f) => ({
+      ...f,
+      access_role: accessInfo.data?.role ?? 'employee',
+    }))
   }, [accessInfo.data])
 
-  const set = (k: keyof EmployeeFormValues, v: any) => setForm((f) => ({ ...f, [k]: v }))
+  const setField = <K extends keyof EmployeeFormValues>(k: K, v: EmployeeFormValues[K]) =>
+    setForm((f) => ({ ...f, [k]: v }))
 
   React.useEffect(() => {
     if (!form.presential_schedule_id) return
     const selectedSchedule = (schedules.data ?? []).find((row) => row.id === form.presential_schedule_id)
     if (!selectedSchedule) return
     if (form.work_shift_id && selectedSchedule.turn_id !== form.work_shift_id) {
-      set('presential_schedule_id', null)
+      setField('presential_schedule_id', null)
     }
   }, [form.work_shift_id, form.presential_schedule_id, schedules.data])
 
   const toggleDay = (day: string) => {
     const current = form.presential_days ?? []
-    const next = current.includes(day) ? current.filter((d) => d !== day) : [...current, day]
-    set('presential_days', next)
+    const next = current.includes(day) ? current.filter((d: string) => d !== day) : [...current, day]
+    setField('presential_days', next)
   }
-
-  // Photo preview
-  React.useEffect(() => {
-    if (!photoFile) return
-    const url = URL.createObjectURL(photoFile)
-    setPhotoPreview(url)
-    return () => URL.revokeObjectURL(url)
-  }, [photoFile])
 
   const save = useMutation({
     mutationFn: async () => {
@@ -443,6 +575,7 @@ export default function EmployeeFormPage({ mode }: Props) {
 
       const requiresSystemAccess = form.work_modality !== 'PRESENCIAL' || form.access_role !== 'employee'
       let tempPassword: string | null = null
+
       if (!isEdit && requiresSystemAccess) {
         if (!form.password || form.password.length < 8) {
           setErrors((p) => ({ ...p, password: 'La contraseña temporal debe tener mínimo 8 caracteres' }))
@@ -454,7 +587,6 @@ export default function EmployeeFormPage({ mode }: Props) {
         }
         tempPassword = form.password
       } else if (isEdit && requiresSystemAccess && (form.password || form.password_confirm)) {
-        // En edición, si se ingresa contraseña, se permite cambiarla
         if (form.password && form.password.length < 8) {
           setErrors((p) => ({ ...p, password: 'La contraseña debe tener mínimo 8 caracteres' }))
           throw new Error('VALIDATION')
@@ -469,7 +601,11 @@ export default function EmployeeFormPage({ mode }: Props) {
       const employeeId = isEdit ? String(id) : crypto.randomUUID()
 
       if (form.access_role === 'tenant_admin') {
-        await ensureUniqueTenantAdmin(tenantId, employeeId, accessInfo.data?.user_id ?? (emp.data as any)?.user_id ?? null)
+        await ensureUniqueTenantAdmin(
+          tenantId,
+          employeeId,
+          accessInfo.data?.user_id ?? (emp.data as any)?.user_id ?? null
+        )
       }
 
       let facial_photo_url = form.facial_photo_url
@@ -483,14 +619,15 @@ export default function EmployeeFormPage({ mode }: Props) {
         const ext = (photoFile.name.split('.').pop() || 'jpg').toLowerCase()
         const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg'
         const path = `${tenantId}/${employeeId}/${Date.now()}.${safeExt}`
-        const uploadRes = await supabase.storage.from(PHOTO_BUCKET).upload(path, photoFile, { upsert: true })
+        const uploadRes = await supabase.storage.from(PHOTO_BUCKET).upload(path, photoFile, {
+          upsert: true,
+        })
         if (uploadRes.error) throw uploadRes.error
         facial_photo_url = path
       }
 
       const normalizedEmploymentStatus = String(form.employment_status || 'ACTIVE').toLowerCase()
 
-      // ── upsert_employee_full con TODOS los campos ─────────────────────────────
       const { error } = await supabase.schema(ATT_SCHEMA).rpc('upsert_employee_full', {
         p_tenant_id: tenantId,
         p_employee_id: employeeId,
@@ -518,7 +655,21 @@ export default function EmployeeFormPage({ mode }: Props) {
       })
       if (error) throw error
 
-      const shouldSyncAccess = (form.work_modality !== 'PRESENCIAL' || form.access_role !== 'employee') || !!accessInfo.data?.has_access
+      const { error: pwaSyncError } = await supabase
+        .schema(ATT_SCHEMA)
+        .rpc('upsert_employee_pwa_self_service_settings', {
+          p_employee_id: employeeId,
+          p_pwa_self_service_enabled: form.pwa_self_service_enabled ?? false,
+          p_geofence_radius_m: form.geofence_radius_m ?? null,
+          p_reset_lock: form.reset_pwa_self_service_lock ?? false,
+        })
+
+      if (pwaSyncError) throw pwaSyncError
+
+      const shouldSyncAccess =
+        (form.work_modality !== 'PRESENCIAL' || form.access_role !== 'employee') ||
+        !!accessInfo.data?.has_access
+
       if (shouldSyncAccess) {
         await provisionEmployeeUser({
           tenant_id: tenantId,
@@ -530,13 +681,16 @@ export default function EmployeeFormPage({ mode }: Props) {
       }
 
       const warnings: string[] = []
+
       try {
         await saveEmployeeOrgAssignment(tenantId, {
           employee_id: employeeId,
           org_unit_id: form.org_unit_id ?? null,
           supervisor_employee_id: form.supervisor_employee_id ?? null,
           is_unit_leader: form.is_org_unit_leader ?? false,
-          lead_org_unit_id: form.is_org_unit_leader ? form.lead_org_unit_id ?? form.org_unit_id ?? null : null,
+          lead_org_unit_id: form.is_org_unit_leader
+            ? form.lead_org_unit_id ?? form.org_unit_id ?? null
+            : null,
         })
       } catch (assignmentError: any) {
         if (isMissingOrgSchemaError(assignmentError)) {
@@ -564,11 +718,15 @@ export default function EmployeeFormPage({ mode }: Props) {
     onSuccess: (result) => {
       toast.success(isEdit ? 'Empleado actualizado' : 'Empleado creado')
       result.warnings.forEach((warning) => toast(warning, { icon: '⚠️' }))
+
       qc.invalidateQueries({ queryKey: ['employees'] })
       qc.invalidateQueries({ queryKey: ['emp'] })
       qc.invalidateQueries({ queryKey: ['employee'] })
       qc.invalidateQueries({ queryKey: ['employee-org-assignment'] })
       qc.invalidateQueries({ queryKey: ['employee-shift-assignment'] })
+      qc.invalidateQueries({ queryKey: ['employee-pwa-settings'] })
+      qc.invalidateQueries({ queryKey: ['employee-profile'] })
+
       nav(`/employees/${result.id}`, { replace: true })
     },
     onError: (e: any) => {
@@ -594,24 +752,54 @@ export default function EmployeeFormPage({ mode }: Props) {
     value: d.id,
     label: biometricSelectLabel(d as any),
   }))
+
   const filteredSchedules = React.useMemo(() => {
     const rows = schedules.data ?? []
     if (!form.work_shift_id) return rows
     return rows.filter((row) => row.turn_id === form.work_shift_id)
   }, [schedules.data, form.work_shift_id])
-  const scheduleOptions = filteredSchedules.map((s) => ({ value: s.id, label: s.name }))
-  const shiftOptions = (shifts.data ?? []).map((shift) => ({ value: shift.id, label: shift.code ? `${shift.name} (${shift.code})` : shift.name }))
-  const orgUnitOptions = (orgUnits.data ?? []).filter((unit) => unit.is_active !== false).map((unit) => ({ value: unit.id, label: buildOrgPath(orgUnits.data ?? [], unit.id) }))
-  const peopleOptions = (people.data ?? []).map((person) => ({ value: person.id, label: person.employee_code ? `${person.full_name} (${person.employee_code})` : person.full_name }))
+
+  const scheduleOptions = filteredSchedules.map((s) => ({
+    value: s.id,
+    label: s.name,
+  }))
+
+  const shiftOptions = (shifts.data ?? []).map((shift) => ({
+    value: shift.id,
+    label: shift.code ? `${shift.name} (${shift.code})` : shift.name,
+  }))
+
+  const orgUnitOptions = (orgUnits.data ?? [])
+    .filter((unit) => unit.is_active !== false)
+    .map((unit) => ({
+      value: unit.id,
+      label: buildOrgPath(orgUnits.data ?? [], unit.id),
+    }))
+
+  const peopleOptions = (people.data ?? []).map((person) => ({
+    value: person.id,
+    label: person.employee_code ? `${person.full_name} (${person.employee_code})` : person.full_name,
+  }))
+
   const showLocationFields = form.work_modality === 'PRESENCIAL' || form.work_modality === 'MIXTO'
   const requiresSystemAccess = form.work_modality !== 'PRESENCIAL' || form.access_role !== 'employee'
-  const orgSchemaMissing = isMissingOrgSchemaError(orgLevels.error) || isMissingOrgSchemaError(orgUnits.error) || isMissingOrgSchemaError(orgAssignment.error)
-  const orgSummary = form.org_unit_id ? buildOrgPath(orgUnits.data ?? [], form.org_unit_id) : 'Sin unidad organizacional asignada'
+  const showPwaSection = form.work_modality !== 'PRESENCIAL'
+
+  const orgSchemaMissing =
+    isMissingOrgSchemaError(orgLevels.error) ||
+    isMissingOrgSchemaError(orgUnits.error) ||
+    isMissingOrgSchemaError(orgAssignment.error)
+
+  const orgSummary = form.org_unit_id
+    ? buildOrgPath(orgUnits.data ?? [], form.org_unit_id)
+    : 'Sin unidad organizacional asignada'
+
   const leadLevelLabel = React.useMemo(() => {
     const unit = (orgUnits.data ?? []).find((row) => row.id === (form.lead_org_unit_id ?? form.org_unit_id))
     const level = (orgLevels.data ?? []).find((row) => row.level_no === unit?.level_no)
     return level?.display_name ?? null
   }, [form.lead_org_unit_id, form.org_unit_id, orgUnits.data, orgLevels.data])
+
   const selectedRoleMeta = ACCESS_ROLE_OPTIONS.find((opt) => opt.value === form.access_role)
 
   if (isEdit && emp.isLoading) {
@@ -622,7 +810,10 @@ export default function EmployeeFormPage({ mode }: Props) {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <button className="mb-2 inline-flex items-center gap-2 text-sm text-white/60 hover:text-white" onClick={() => nav(isEdit ? `/employees/${id}` : '/employees')}>
+          <button
+            className="mb-2 inline-flex items-center gap-2 text-sm text-white/60 hover:text-white"
+            onClick={() => nav(isEdit ? `/employees/${id}` : '/employees')}
+          >
             <ChevronLeft size={16} /> {isEdit ? 'Volver al perfil' : 'Volver'}
           </button>
           <h1 className="text-xl font-bold">
@@ -631,6 +822,7 @@ export default function EmployeeFormPage({ mode }: Props) {
               : 'Nuevo empleado'}
           </h1>
         </div>
+
         <Button
           leftIcon={save.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
           onClick={() => save.mutate()}
@@ -640,7 +832,6 @@ export default function EmployeeFormPage({ mode }: Props) {
         </Button>
       </div>
 
-      {/* ── Estado ─────────────────────────────────────────────────────── */}
       <Card title="Estado del empleado">
         <div className="flex flex-wrap gap-2">
           {(['ACTIVE', 'VACATION', 'SUSPENDED', 'TERMINATED'] as const).map((status) => (
@@ -648,78 +839,88 @@ export default function EmployeeFormPage({ mode }: Props) {
               key={status}
               className={pill(form.employment_status === status)}
               onClick={() => {
-                set('employment_status', status)
+                setField('employment_status', status)
                 if (status === 'VACATION') setVacOpen(true)
               }}
             >
-              {{ ACTIVE: 'Activo', VACATION: 'Vacaciones', SUSPENDED: 'Suspendido', TERMINATED: 'Cesante' }[status]}
+              {{
+                ACTIVE: 'Activo',
+                VACATION: 'Vacaciones',
+                SUSPENDED: 'Suspendido',
+                TERMINATED: 'Cesante',
+              }[status]}
             </button>
           ))}
         </div>
       </Card>
 
-      {/* ── Datos básicos + Foto ───────────────────────────────────────── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card title="Datos básicos" className="xl:col-span-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Input
-              label="Código de empleado"
+              label="Código"
               value={form.employee_code}
-              onChange={(e) => set('employee_code', e.target.value)}
+              onChange={(e) => setField('employee_code', e.target.value)}
               error={errors.employee_code}
             />
             <Input
               label="Cédula / ID"
               value={form.identification}
-              onChange={(e) => set('identification', e.target.value.replace(/\D+/g, ''))}
+              onChange={(e) => setField('identification', e.target.value.replace(/\D+/g, ''))}
               error={errors.identification}
               inputMode="numeric"
             />
             <Input
               label="Nombres"
               value={form.first_name}
-              onChange={(e) => set('first_name', e.target.value)}
+              onChange={(e) => setField('first_name', e.target.value)}
               error={errors.first_name}
             />
             <Input
               label="Apellidos"
               value={form.last_name}
-              onChange={(e) => set('last_name', e.target.value)}
+              onChange={(e) => setField('last_name', e.target.value)}
               error={errors.last_name}
             />
             <Input
               label="Email"
               type="email"
               value={form.email}
-              onChange={(e) => set('email', e.target.value)}
+              onChange={(e) => setField('email', e.target.value)}
               error={errors.email}
             />
             <Input
               label="Teléfono"
               value={form.phone ?? ''}
-              onChange={(e) => set('phone', e.target.value || null)}
+              onChange={(e) => setField('phone', e.target.value || null)}
               error={errors.phone}
-              placeholder="Ej: 0991234567"
+            />
+            <Select
+              label="Departamento"
+              value={form.department_id ?? ''}
+              onChange={(v) => setField('department_id', v || null)}
+              options={(deps.data ?? []).map((d: any) => ({ value: d.id, label: d.name }))}
+              placeholder="Seleccione departamento…"
+              error={errors.department_id}
             />
             <Input
               label="Fecha contratación"
               type="date"
               value={form.hire_date ?? ''}
-              onChange={(e) => set('hire_date', e.target.value || null)}
+              onChange={(e) => setField('hire_date', e.target.value || null)}
             />
             <Input
               label="Sueldo"
               type="number"
               value={form.salary ?? ''}
-              onChange={(e) => set('salary', e.target.value ? Number(e.target.value) : null)}
+              onChange={(e) => setField('salary', e.target.value ? Number(e.target.value) : null)}
             />
             <div className="md:col-span-2">
               <Input
                 label="Dirección"
                 value={form.address ?? ''}
-                onChange={(e) => set('address', e.target.value || null)}
+                onChange={(e) => setField('address', e.target.value || null)}
                 error={errors.address}
-                placeholder="Dirección del empleado"
               />
             </div>
           </div>
@@ -727,7 +928,6 @@ export default function EmployeeFormPage({ mode }: Props) {
 
         <Card title="Fotografía" subtitle="Reconocimiento facial" actions={<Camera size={18} className="text-white/60" />}>
           <div className="space-y-3">
-            {/* Foto existente guardada */}
             {!photoPreview && existingPhoto.data && (
               <img
                 src={existingPhoto.data}
@@ -735,10 +935,11 @@ export default function EmployeeFormPage({ mode }: Props) {
                 className="w-full rounded-2xl border border-white/10 object-cover max-h-56"
               />
             )}
+
             {!photoPreview && form.facial_photo_url && !existingPhoto.data && (
               <div className="text-xs text-white/50 italic">Foto guardada. Cargando vista previa…</div>
             )}
-            {/* Vista previa de nueva foto seleccionada */}
+
             {photoPreview && (
               <img
                 src={photoPreview}
@@ -746,29 +947,31 @@ export default function EmployeeFormPage({ mode }: Props) {
                 className="w-full rounded-2xl border border-white/10 object-cover max-h-56"
               />
             )}
+
             <input
               type="file"
               accept="image/*"
               onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
               className="text-sm text-white/70"
             />
-            {errors.facial_photo_url && <div className="text-xs text-rose-200">{errors.facial_photo_url}</div>}
-            {photoCheck && !photoCheck.ok && (
-              <div className="text-xs text-rose-200">La foto no cumple: {photoCheck.issues.join(', ')}</div>
+
+            {errors.facial_photo_url && (
+              <div className="text-xs text-rose-200">{errors.facial_photo_url}</div>
             )}
+
+            {photoCheck && !photoCheck.ok && (
+              <div className="text-xs text-rose-200">
+                La foto no cumple: {photoCheck.issues.join(', ')}
+              </div>
+            )}
+
             {photoCheck?.ok && (
               <div className="text-xs text-emerald-300">✓ Fotografía válida</div>
             )}
-            <p className="text-xs text-white/50">
-              {isEdit
-                ? 'Opcional: sube una nueva foto para reemplazar la actual.'
-                : 'La fotografía es obligatoria y se valida contra la configuración facial del tenant.'}
-            </p>
           </div>
         </Card>
       </div>
 
-      {/* ── Rol de acceso ─────────────────────────────────────────────── */}
       <Card
         title="Rol de acceso en Base"
         subtitle="Diferencia la jefatura organizacional del rol de acceso al sistema"
@@ -778,14 +981,17 @@ export default function EmployeeFormPage({ mode }: Props) {
           <Select
             label="Rol del sistema"
             value={form.access_role}
-            onChange={(v) => set('access_role', (v || 'employee') as any)}
+            onChange={(v) => setField('access_role', (v || 'employee') as EmployeeFormValues['access_role'])}
             options={EMPLOYEE_ACCESS_ROLE_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
             placeholder="Seleccione rol…"
           />
+
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="text-xs text-white/60">Rol seleccionado</div>
             <div className="mt-2 font-semibold">{accessRoleLabel(form.access_role)}</div>
-            <div className="mt-2 text-xs text-white/60">{selectedRoleMeta?.help ?? 'Sin observaciones'}</div>
+            <div className="mt-2 text-xs text-white/60">
+              {selectedRoleMeta?.help ?? 'Sin observaciones'}
+            </div>
             {form.access_role === 'tenant_admin' && (
               <div className="mt-3 rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
                 Debe existir un solo Administrador HRCloud activo por tenant. El sistema validará la unicidad antes de guardar.
@@ -795,7 +1001,6 @@ export default function EmployeeFormPage({ mode }: Props) {
         </div>
       </Card>
 
-      {/* ── Credenciales ──────────────────────────────────────────────── */}
       {requiresSystemAccess ? (
         <Card
           title="Credenciales de acceso"
@@ -811,17 +1016,21 @@ export default function EmployeeFormPage({ mode }: Props) {
                 <input
                   type={showPass ? 'text' : 'password'}
                   value={form.password ?? ''}
-                  onChange={(e) => set('password', e.target.value)}
+                  onChange={(e) => setField('password', e.target.value)}
                   placeholder={isEdit ? 'Dejar vacío para no cambiar' : 'Mínimo 8 caracteres'}
-                  disabled={false}
-                  className="w-full px-3 py-2 pr-10 rounded-xl text-sm outline-none border border-white/15 bg-white/5 text-white placeholder:text-white/30 focus:border-blue-500 disabled:opacity-50"
+                  className="w-full px-3 py-2 pr-10 rounded-xl text-sm outline-none border border-white/15 bg-white/5 text-white placeholder:text-white/30 focus:border-blue-500"
                 />
-                <button type="button" onClick={() => setShowPass((v) => !v)} className="absolute right-3 top-2.5 text-white/40 hover:text-white/70">
+                <button
+                  type="button"
+                  onClick={() => setShowPass((v) => !v)}
+                  className="absolute right-3 top-2.5 text-white/40 hover:text-white/70"
+                >
                   {showPass ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
               {errors.password && <p className="text-xs text-rose-300 mt-1">{errors.password}</p>}
             </div>
+
             <div>
               <label className="block text-xs font-medium mb-1 text-white/60">
                 Confirmar contraseña{!isEdit && <span className="text-rose-400 ml-1">*</span>}
@@ -829,45 +1038,35 @@ export default function EmployeeFormPage({ mode }: Props) {
               <input
                 type={showPass ? 'text' : 'password'}
                 value={form.password_confirm ?? ''}
-                onChange={(e) => set('password_confirm', e.target.value)}
+                onChange={(e) => setField('password_confirm', e.target.value)}
                 placeholder={isEdit ? 'Dejar vacío para no cambiar' : 'Repetir contraseña'}
-                disabled={false}
-                className="w-full px-3 py-2 rounded-xl text-sm outline-none border border-white/15 bg-white/5 text-white placeholder:text-white/30 focus:border-blue-500 disabled:opacity-50"
+                className="w-full px-3 py-2 rounded-xl text-sm outline-none border border-white/15 bg-white/5 text-white placeholder:text-white/30 focus:border-blue-500"
               />
-              {errors.password_confirm && <p className="text-xs text-rose-300 mt-1">{errors.password_confirm}</p>}
+              {errors.password_confirm && (
+                <p className="text-xs text-rose-300 mt-1">{errors.password_confirm}</p>
+              )}
             </div>
-          </div>
-          <div className="mt-3 flex items-start gap-2 rounded-xl bg-blue-500/10 border border-blue-500/20 px-4 py-3">
-            <Lock size={13} className="flex-shrink-0 mt-0.5 text-blue-400" />
-            <p className="text-xs text-white/60">
-              Estas credenciales cubren el acceso PWA para personal remoto/mixto y también el acceso administrativo cuando el rol del sistema no es Empleado. En edición, deja la contraseña vacía si no deseas cambiarla.
-            </p>
           </div>
         </Card>
       ) : (
-        <Card
-          title="Acceso al sistema"
-          subtitle="No requiere credenciales en este momento"
-          actions={<KeyRound size={18} className="text-white/60" />}
-        >
+        <Card title="Acceso al sistema" subtitle="No requiere credenciales en este momento" actions={<KeyRound size={18} className="text-white/60" />}>
           <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70">
             Este empleado es presencial y no tiene rol administrativo. Por eso no se provisionan credenciales PWA ni acceso Base en la creación.
           </div>
         </Card>
       )}
 
-      {/* ── Modalidad de trabajo ───────────────────────────────────────── */}
-      <Card
-        title="Modalidad de trabajo"
-        subtitle="Define cómo y desde dónde trabaja el empleado"
-        actions={<Briefcase size={18} className="text-white/60" />}
-      >
+      <Card title="Modalidad de trabajo" subtitle="Define cómo y desde dónde trabaja el empleado" actions={<MapPin size={18} className="text-white/60" />}>
         <div className="space-y-5">
           <div>
             <label className="block text-sm text-white/60 mb-2">Modalidad</label>
             <div className="flex flex-wrap gap-2">
               {WORK_MODALITY_OPTIONS.map((opt) => (
-                <button key={opt.value} className={pill(form.work_modality === opt.value)} onClick={() => set('work_modality', opt.value)}>
+                <button
+                  key={opt.value}
+                  className={pill(form.work_modality === opt.value)}
+                  onClick={() => setField('work_modality', opt.value)}
+                >
                   {opt.label}
                 </button>
               ))}
@@ -879,13 +1078,18 @@ export default function EmployeeFormPage({ mode }: Props) {
               <p className="text-sm font-medium text-white/80">Días presenciales</p>
               <div className="flex flex-wrap gap-2">
                 {DAYS_OF_WEEK.map((d) => (
-                  <button key={d.value} className={pill((form.presential_days ?? []).includes(d.value))} onClick={() => toggleDay(d.value)}>
+                  <button
+                    key={d.value}
+                    className={pill((form.presential_days ?? []).includes(d.value))}
+                    onClick={() => toggleDay(d.value)}
+                  >
                     {d.label}
                   </button>
                 ))}
               </div>
-              {errors.presential_days && <p className="text-xs text-rose-300">{errors.presential_days}</p>}
-              <p className="text-xs text-white/50">El horario se asigna en la sección de estructura organizacional y asignación laboral.</p>
+              {errors.presential_days && (
+                <p className="text-xs text-rose-300">{errors.presential_days}</p>
+              )}
             </div>
           )}
 
@@ -895,19 +1099,25 @@ export default function EmployeeFormPage({ mode }: Props) {
                 <MapPin size={15} className="text-white/60" />
                 <p className="text-sm font-medium text-white/80">Lugar de marcación</p>
               </div>
+
               <div className="flex flex-wrap gap-2">
                 {LOCATION_MODE_OPTIONS.map((opt) => (
-                  <button key={opt.value} className={pill(form.location_mode === opt.value)} onClick={() => set('location_mode', opt.value)}>
+                  <button
+                    key={opt.value}
+                    className={pill(form.location_mode === opt.value)}
+                    onClick={() => setField('location_mode', opt.value)}
+                  >
                     {opt.label}
                   </button>
                 ))}
               </div>
+
               {form.location_mode === 'UBICACION' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
                   <Select
                     label="Biométrico de entrada"
                     value={form.entry_biometric_id ?? ''}
-                    onChange={(v) => set('entry_biometric_id', v || null)}
+                    onChange={(v) => setField('entry_biometric_id', v || null)}
                     options={bioOptions}
                     placeholder="Seleccione ubicación…"
                     error={errors.entry_biometric_id}
@@ -915,22 +1125,106 @@ export default function EmployeeFormPage({ mode }: Props) {
                   <Select
                     label="Biométrico de salida"
                     value={form.exit_biometric_id ?? ''}
-                    onChange={(v) => set('exit_biometric_id', v || null)}
+                    onChange={(v) => setField('exit_biometric_id', v || null)}
                     options={bioOptions}
                     placeholder="Seleccione ubicación…"
                     error={errors.exit_biometric_id}
                   />
                 </div>
               )}
-              {bioDevices.isError && (
-                <p className="text-xs text-amber-300">No se pudieron cargar los biométricos. Verifique attendance.biometric_devices.</p>
-              )}
             </div>
           )}
         </div>
       </Card>
 
-      {/* ── Estructura organizacional ──────────────────────────────────── */}
+      {showPwaSection && (
+        <Card
+          title="Autogestión PWA y umbral GPS"
+          subtitle="Visible para empleados remotos o mixtos; define el radio válido de captura GPS en PWA"
+          actions={<Smartphone size={18} className="text-white/60" />}
+        >
+          <div className="space-y-5">
+            <div>
+              <label className="block text-sm text-white/60 mb-2">Autogestión PWA</label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className={pill(form.pwa_self_service_enabled === true)}
+                  onClick={() => setField('pwa_self_service_enabled', true)}
+                >
+                  Habilitada
+                </button>
+                <button
+                  className={pill(form.pwa_self_service_enabled === false)}
+                  onClick={() => setField('pwa_self_service_enabled', false)}
+                >
+                  Deshabilitada
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input
+                label="Umbral GPS válido (m a la redonda)"
+                type="number"
+                value={form.geofence_radius_m ?? ''}
+                onChange={(e) => setField('geofence_radius_m', e.target.value ? Number(e.target.value) : null)}
+                error={errors.geofence_radius_m}
+                placeholder="Ej: 100 metros"
+              />
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
+                <div className="text-white/60">Estado actual</div>
+                <div className="mt-2 font-semibold flex items-center gap-2">
+                  {form.pwa_self_service_locked ? (
+                    <CheckCircle2 size={14} className="text-emerald-300" />
+                  ) : (
+                    <Clock3 size={14} className="text-amber-200" />
+                  )}
+                  {form.pwa_self_service_locked ? 'Bloqueado' : 'Editable / pendiente'}
+                </div>
+
+                {form.pwa_self_service_completed_at && (
+                  <div className="mt-1 text-xs text-white/50">
+                    Completado: {new Date(form.pwa_self_service_completed_at).toLocaleString()}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-white/5 border border-white/10 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setField('reset_pwa_self_service_lock', !form.reset_pwa_self_service_lock)}
+                  className={`w-10 h-6 rounded-full transition-colors flex items-center ${
+                    form.reset_pwa_self_service_lock ? 'bg-blue-500 justify-end' : 'bg-white/20 justify-start'
+                  }`}
+                >
+                  <span className="w-5 h-5 mx-0.5 rounded-full bg-white shadow" />
+                </button>
+                <div className="text-sm text-white/80">
+                  Resetear bloqueo de autogestión PWA al guardar
+                </div>
+              </div>
+
+              <div className="text-xs text-white/50">
+                Si activas esta opción, el sistema dejará nuevamente editable la autogestión en PWA para el empleado.
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-white/5 border border-white/10 p-4">
+              <div className="text-white/60 mb-1">GPS registrado por el empleado</div>
+              <div className="font-semibold flex items-center gap-2">
+                <LocateFixed size={14} className="text-cyan-300" />
+                {form.geofence_lat != null && form.geofence_lng != null
+                  ? `${Number(form.geofence_lat).toFixed(6)}, ${Number(form.geofence_lng).toFixed(6)}`
+                  : 'Aún no registrado en PWA'}
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
       <Card
         title="Departamento / jefatura inmediata y asignación laboral"
         subtitle="Asigna el área, sección o departamento donde pertenece el empleado, su jefatura inmediata, turno y horario"
@@ -938,56 +1232,65 @@ export default function EmployeeFormPage({ mode }: Props) {
       >
         <div className="space-y-5">
           {orgSchemaMissing && note(ORG_MIGRATION_HINT)}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Select
               label="Departamento / área / sección donde pertenece *"
               value={form.org_unit_id ?? ''}
-              onChange={(v) => set('org_unit_id', v || null)}
+              onChange={(v) => setField('org_unit_id', v || null)}
               options={orgUnitOptions}
               placeholder="Seleccione el departamento, área o sección…"
               error={errors.org_unit_id}
             />
+
             <Select
               label="Turno efectivo"
               value={form.work_shift_id ?? ''}
               onChange={(v) => {
-                set('work_shift_id', v || null)
-                if (!v) set('presential_schedule_id', null)
+                setField('work_shift_id', v || null)
+                if (!v) setField('presential_schedule_id', null)
               }}
               options={shiftOptions}
               placeholder="Seleccione turno…"
               error={errors.work_shift_id}
             />
+
             <div className="space-y-1">
               <Select
                 label="Horario asignado"
                 value={form.presential_schedule_id ?? ''}
                 onChange={(v) => {
                   const nextId = v || null
-                  set('presential_schedule_id', nextId)
+                  setField('presential_schedule_id', nextId)
                   const selectedSchedule = (schedules.data ?? []).find((row) => row.id === nextId)
                   if (selectedSchedule?.turn_id && selectedSchedule.turn_id !== form.work_shift_id) {
-                    set('work_shift_id', selectedSchedule.turn_id)
+                    setField('work_shift_id', selectedSchedule.turn_id)
                   }
                 }}
                 options={scheduleOptions}
                 placeholder={form.work_shift_id ? 'Seleccione horario…' : 'Seleccione primero un turno…'}
                 error={errors.presential_schedule_id}
               />
-              <p className="text-xs text-white/50">Los horarios se filtran según el turno seleccionado y se usan en asistencia, dashboards y reportes.</p>
+              <p className="text-xs text-white/50">
+                Los horarios se filtran según el turno seleccionado y se usan en asistencia, dashboards y reportes.
+              </p>
             </div>
+
             <Select
               label="Jefatura inmediata / supervisor inmediato"
               value={form.supervisor_employee_id ?? ''}
-              onChange={(v) => set('supervisor_employee_id', v || null)}
+              onChange={(v) => setField('supervisor_employee_id', v || null)}
               options={peopleOptions.filter((person) => person.value !== id)}
               placeholder="Seleccione la jefatura inmediata o deje resolución automática"
               error={errors.supervisor_employee_id}
             />
+
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 md:col-span-2">
               <div className="text-xs text-white/60">Ruta completa del organigrama</div>
               <div className="mt-2 font-semibold">{orgSummary}</div>
-              <div className="mt-2 text-xs text-white/50">Aquí defines el departamento, área o sección exacta donde pertenece el empleado y quién es su jefatura inmediata.</div>
+              <div className="mt-2 text-xs text-white/50">
+                Aquí defines el departamento, área o sección exacta donde pertenece el empleado y quién es su jefatura inmediata.
+              </div>
             </div>
           </div>
 
@@ -995,14 +1298,19 @@ export default function EmployeeFormPage({ mode }: Props) {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => set('is_org_unit_leader', !form.is_org_unit_leader)}
-                className={`w-10 h-6 rounded-full transition-colors flex items-center ${form.is_org_unit_leader ? 'bg-blue-500 justify-end' : 'bg-white/20 justify-start'}`}
+                onClick={() => setField('is_org_unit_leader', !form.is_org_unit_leader)}
+                className={`w-10 h-6 rounded-full transition-colors flex items-center ${
+                  form.is_org_unit_leader ? 'bg-blue-500 justify-end' : 'bg-white/20 justify-start'
+                }`}
               >
                 <span className="w-5 h-5 mx-0.5 rounded-full bg-white shadow" />
               </button>
+
               <div className="flex items-center gap-2">
                 <Building2 size={16} className="text-white/60" />
-                <span className="text-sm text-white/80">Es jefe del departamento / área / sección a la que pertenece</span>
+                <span className="text-sm text-white/80">
+                  Es jefe del departamento / área / sección a la que pertenece
+                </span>
               </div>
             </div>
 
@@ -1011,35 +1319,24 @@ export default function EmployeeFormPage({ mode }: Props) {
                 <Select
                   label="Departamento / área / sección que lidera"
                   value={form.lead_org_unit_id ?? form.org_unit_id ?? ''}
-                  onChange={(v) => set('lead_org_unit_id', v || null)}
+                  onChange={(v) => setField('lead_org_unit_id', v || null)}
                   options={orgUnitOptions}
                   placeholder="Seleccione unidad…"
                   error={errors.lead_org_unit_id}
                 />
+
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
                   <div className="text-white/60">Nivel de jefatura</div>
-                  <div className="mt-2 font-semibold">{leadLevelLabel ?? 'Se determinará por la unidad seleccionada'}</div>
+                  <div className="mt-2 font-semibold">
+                    {leadLevelLabel ?? 'Se determinará por la unidad seleccionada'}
+                  </div>
                 </div>
               </div>
             )}
           </div>
-
-          {(orgLevels.data ?? []).length > 0 && (
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-              <div className="text-sm font-medium text-white/80 mb-2">Niveles organizacionales habilitados</div>
-              <div className="flex flex-wrap gap-2">
-                {(orgLevels.data ?? []).filter((row) => row.is_enabled).map((row) => (
-                  <span key={row.level_no} className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs text-white/75">
-                    Nivel {row.level_no}: {row.display_name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </Card>
 
-      {/* ── Botón guardar sticky ─────────────────────────────────────────── */}
       <div className="sticky bottom-4 flex justify-end z-10">
         <Button
           leftIcon={save.isPending ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -1051,14 +1348,26 @@ export default function EmployeeFormPage({ mode }: Props) {
         </Button>
       </div>
 
-      {/* ── Modal vacaciones ───────────────────────────────────────────── */}
       <Modal open={vacOpen} onClose={() => setVacOpen(false)} title="Periodo de vacaciones">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Input label="Inicio" type="date" value={form.vacation_start ?? ''} onChange={(e) => set('vacation_start', e.target.value || null)} />
-          <Input label="Fin" type="date" value={form.vacation_end ?? ''} onChange={(e) => set('vacation_end', e.target.value || null)} />
+          <Input
+            label="Inicio"
+            type="date"
+            value={form.vacation_start ?? ''}
+            onChange={(e) => setField('vacation_start', e.target.value || null)}
+          />
+          <Input
+            label="Fin"
+            type="date"
+            value={form.vacation_end ?? ''}
+            onChange={(e) => setField('vacation_end', e.target.value || null)}
+          />
         </div>
+
         <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={() => setVacOpen(false)}>Cerrar</Button>
+          <Button variant="secondary" onClick={() => setVacOpen(false)}>
+            Cerrar
+          </Button>
           <Button onClick={() => setVacOpen(false)}>Aplicar</Button>
         </div>
       </Modal>

@@ -238,27 +238,109 @@ async function fetchReportConfig(tenantId: string): Promise<Record<string, Store
 function normalizeMethodLabel(method: string) {
   const v = method.trim().toUpperCase()
   if (!v) return ''
-  if (v === '1' || v.includes('HUELLA')) return 'Huella'
-  if (v === '15' || v.includes('FACIAL') || v.includes('FACE') || v.includes('RECONOCIMIENTO_FACIAL')) return 'Facial'
-  if (v.includes('CODIGO') || v.includes('CÓDIGO') || v.includes('PASSWORD') || v === '3') return 'Código'
-  if (v.includes('TARJETA') || v.includes('CARD') || v === '2') return 'Tarjeta'
-  if (v.includes('USB')) return 'USB'
+
+  if (
+    v === '1' ||
+    v === 'FP' ||
+    v.includes('HUELLA') ||
+    v.includes('FINGER') ||
+    v.includes('FINGERPRINT') ||
+    v.includes('HUELLA_DACTILAR')
+  ) {
+    return 'Huella'
+  }
+
+  if (
+    v === '15' ||
+    v.includes('FACIAL') ||
+    v.includes('FACE') ||
+    v.includes('RECONOCIMIENTO_FACIAL') ||
+    v.includes('ROSTRO')
+  ) {
+    return 'Facial'
+  }
+
+  if (
+    v === '3' ||
+    v.includes('CODIGO') ||
+    v.includes('CÓDIGO') ||
+    v.includes('PASSWORD') ||
+    v.includes('PIN') ||
+    v.includes('CLAVE')
+  ) {
+    return 'Código'
+  }
+
+  if (v === '2' || v.includes('TARJETA') || v.includes('CARD')) {
+    return 'Tarjeta'
+  }
+
+  if (v.includes('USB')) {
+    return 'USB'
+  }
+
   return method
 }
 
 function sourceLabel(row?: SourceRow | null) {
   if (!row) return '—'
 
-  const sourceSet = new Set((row.sources ?? []).filter(Boolean).map((s) => String(s).toUpperCase()))
-  const methodLabels = Array.from(new Set((row.biometric_methods ?? row.biometric_verify_types ?? []).filter(Boolean).map((m) => normalizeMethodLabel(String(m))).filter(Boolean)))
+  const sourceValues = (row.sources ?? [])
+    .filter(Boolean)
+    .map((s) => String(s).trim().toUpperCase())
+    .filter(Boolean)
 
-  if (sourceSet.has('BIOMETRIC') && methodLabels.length) {
-    return methodLabels.join(' / ')
+  const sourceSet = new Set(sourceValues)
+
+  const methodLabels = Array.from(
+    new Set(
+      (row.biometric_methods ?? row.biometric_verify_types ?? [])
+        .filter(Boolean)
+        .map((m) => normalizeMethodLabel(String(m)))
+        .filter(Boolean),
+    ),
+  )
+
+  const hasBiometricSignal =
+    methodLabels.length > 0 ||
+    sourceValues.some(
+      (s) =>
+        s.includes('BIO') ||
+        s.includes('DEVICE') ||
+        s.includes('ZK') ||
+        s.includes('RELOJ'),
+    ) ||
+    (row.serial_nos ?? []).filter(Boolean).length > 0
+
+  const labels: string[] = []
+
+  const hasWeb = sourceValues.some(
+    (s) => s === 'WEB' || s.includes('PWA') || s.includes('REMOTE'),
+  )
+  const hasUsb = sourceValues.some((s) => s === 'USB')
+  const hasImport = sourceValues.some((s) => s.includes('IMPORT'))
+
+  if (hasBiometricSignal) {
+    labels.push(methodLabels.length ? methodLabels.join(' / ') : 'Biométrico')
   }
-  if (sourceSet.has('WEB')) return 'Web'
-  if (sourceSet.has('USB')) return 'USB'
-  if (sourceSet.size) return Array.from(sourceSet).join(' / ')
-  return '—'
+
+  if (hasWeb) labels.push('Web')
+  if (hasUsb) labels.push('USB')
+  if (hasImport) labels.push('Importación')
+
+  if (!labels.length && sourceSet.size) {
+    labels.push(
+      Array.from(sourceSet)
+        .map((v) => {
+          if (v.includes('BIO')) return 'Biométrico'
+          if (v === 'WEB') return 'Web'
+          return v
+        })
+        .join(' / '),
+    )
+  }
+
+  return labels.length ? labels.join(' • ') : '—'
 }
 
 function normalizeReportColumns(raw: Record<string, StoredColumnConfig> | null | undefined): ReportColumn[] {
@@ -318,6 +400,37 @@ function buildCellText(column: ReportColumn, row: NormalizedDailyRow, source?: S
       return row.employee_code || '—'
     default:
       return '—'
+  }
+}
+
+function renderHeaderLabel(column: ReportColumn) {
+  switch (column.key) {
+    case 'lunch_out_at':
+      return (
+        <span className="inline-flex flex-col leading-4">
+          <span>Salida a</span>
+          <span>comer</span>
+        </span>
+      )
+
+    case 'lunch_in_at':
+      return (
+        <span className="inline-flex flex-col leading-4">
+          <span>Regreso de</span>
+          <span>comer</span>
+        </span>
+      )
+
+    case 'source':
+      return (
+        <span className="inline-flex flex-col leading-4">
+          <span>Fuente de</span>
+          <span>marcación</span>
+        </span>
+      )
+
+    default:
+      return column.label
   }
 }
 
@@ -412,7 +525,11 @@ function renderCell(
     case 'department_name':
       return <span className="text-white/70">{row.department_name || 'Sin departamento'}</span>
     case 'source':
-      return <span className="text-white/70">{sourceLabel(source)}</span>
+      return (
+        <div className="max-w-[160px] whitespace-normal break-words leading-5 text-white/70">
+          {sourceLabel(source)}
+        </div>
+      )
     case 'novelty':
       return <span className="block max-w-[280px] truncate text-white/70" title={row.novelty || '—'}>{row.novelty || '—'}</span>
     case 'turn_name':
@@ -685,9 +802,24 @@ export default function DailyAttendanceReportPage() {
             <table className="min-w-[1220px] w-full text-sm">
               <thead className="text-white/60">
                 <tr>
-                  {visibleColumns.map((column) => (
-                    <th key={column.key} className="py-3 text-left">{column.label}</th>
-                  ))}
+                  {visibleColumns.map((column) => {
+                    const isCompactHeader =
+                      column.key === 'lunch_out_at' ||
+                      column.key === 'lunch_in_at' ||
+                      column.key === 'source'
+
+                    return (
+                      <th
+                        key={column.key}
+                        className={[
+                          'py-3 text-left align-bottom',
+                          isCompactHeader ? 'whitespace-normal leading-4 min-w-[96px]' : 'whitespace-nowrap',
+                        ].join(' ')}
+                      >
+                        {renderHeaderLabel(column)}
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -696,7 +828,7 @@ export default function DailyAttendanceReportPage() {
                   return (
                     <tr key={`${row.work_date}-${row.employee_code}-${index}`} className="border-t border-white/10 align-top">
                       {visibleColumns.map((column) => (
-                        <td key={`${column.key}-${index}`} className="py-3">
+                        <td key={`${column.key}-${index}`} className="py-3 pr-3 align-top">
                           {renderCell(column, row, source, openNoveltyPopover)}
                         </td>
                       ))}

@@ -186,10 +186,12 @@ export const useAttendance = (profile: UserProfile | null) => {
     const punches = (data || []) as AttendancePunch[]
     const last = punches[0] || null
 
-    // Estado UX simple
+    // Estado UX: break_end vuelve a clocked_in (el empleado regresó del descanso → siguiente acción es clock_out)
     const a = lastAction(last)
     const clockStatus: ClockStatus =
-      a === 'clock_in' ? 'clocked_in' : a === 'break_start' ? 'on_break' : 'idle'
+      a === 'clock_in'    || a === 'break_end' ? 'clocked_in'
+      : a === 'break_start'                    ? 'on_break'
+      :                                          'idle'
 
     setState((prev) => ({
       ...prev,
@@ -408,165 +410,266 @@ export const useAttendance = (profile: UserProfile | null) => {
         biometricResult: null,
       }))
 
-      // 1) Selfie + Verificación facial en BACKEND
+      const punched_at = new Date().toISOString()
+      const novelties: Array<{ step: string; ok: boolean; reason: string }> = []
+
+      // ── 1. Selfie + Verificación facial ──────────────────────────────────────
+      // NO bloquea la marcación. Si falla, queda como novedad.
       let selfie: { bucket: string; path: string } | null = null
       let face: FaceResult | null = null
-      try {
-        const r = await uploadAndVerifySelfie(opts?.selfieBlob)
-        selfie = r.selfie
-        face = r.face
+      let faceVerified = false
 
-        if (state.settings.face_enabled && face && face.match === false) {
-          const reason = face.reason || 'Rostro no coincide.'
-          await recordAttemptBestEffort({
-            ok: false,
+      if (state.settings.selfie_required || state.settings.face_enabled) {
+        try {
+          const r = await uploadAndVerifySelfie(opts?.selfieBlob)
+          selfie = r.selfie
+          face = r.face
+
+          if (state.settings.face_enabled && face && face.match === false) {
+            // ── Rostro no coincide: pausar flujo y retornar al componente ────────
+            // El componente mostrará modal con opciones:
+            //   [Reintentar]  →  vuelve a capturar selfie
+            //   [Marcar de todas formas]  →  llama registerPunch con forceWithFaceWarning=true
+            setState((prev) => ({ ...prev, loading: false, biometricStatus: 'failed' }))
+            return 'face_rejected' as const
+          } else {
+            faceVerified = face?.match === true
+          }
+        } catch (e: any) {
+          novelties.push({
             step: 'face',
-            action,
-            reason,
-            meta: {
-              action,
-              selfie,
-              face,
-              device: { device_id: deviceId, ua: navigator.userAgent },
-            },
+            ok: false,
+            reason: e?.message || 'Error en captura/verificación biométrica',
           })
-          setState((p) => ({ ...p, loading: false, error: `Validación biométrica fallida: ${reason}` }))
-          return false
         }
-      } catch (e: any) {
-        const msg = e?.message || 'Error en captura/verificación biométrica.'
-        await recordAttemptBestEffort({ ok: false, step: 'face', action, reason: msg, meta: { action } })
-        setState((p) => ({ ...p, loading: false, error: msg }))
-        return false
       }
 
-      // 2) GPS (solo después de biometría OK)
+      // ── 2. GPS + Geocerca ─────────────────────────────────────────────────────
+      // NO bloquea la marcación. Si falla, queda como novedad.
       let loc: GeoLocation | null = null
+      let geoEvidence: any = null
+      let geofenceOk: boolean | null = null
+      let distanceM: number | null = null
+
       if (state.settings.geo_enabled) {
-        loc = await captureLocation()
-        if (!loc) {
-          await recordAttemptBestEffort({ ok: false, step: 'gps', action, reason: 'No se pudo obtener GPS.', meta: { action, selfie, face } })
-          setState((prev) => ({ ...prev, loading: false, error: 'No se pudo obtener ubicación (GPS).' }))
-          return false
-        }
-        if (!isAccuracyAcceptable(loc.accuracy, MAX_ACCURACY)) {
-          const reason = `Precisión GPS insuficiente (${Math.round(loc.accuracy)}m).`
-          await recordAttemptBestEffort({ ok: false, step: 'gps', action, reason, meta: { action, selfie, face } })
-          setState((prev) => ({ ...prev, loading: false, error: reason }))
-          return false
+        try {
+          loc = await getCurrentPosition()
+
+          if (!isAccuracyAcceptable(loc.accuracy, MAX_ACCURACY)) {
+            novelties.push({
+              step: 'gps',
+              ok: false,
+              reason: `Precisión GPS insuficiente: ${Math.round(loc.accuracy)}m (máximo permitido: ${MAX_ACCURACY}m)`,
+            })
+          }
+
+          const lat0 = (profile as any).geofence_lat as number | null | undefined
+          const lng0 = (profile as any).geofence_lng as number | null | undefined
+
+          if (lat0 != null && lng0 != null) {
+            const { status, distance } = validateGeofence(
+              loc.latitude, loc.longitude, lat0, lng0, state.settings.geo_max_m
+            )
+            geofenceOk = status === 'inside'
+            distanceM  = distance
+
+            if (!geofenceOk) {
+              novelties.push({
+                step: 'gps',
+                ok: false,
+                reason: `Fuera del área de trabajo: ${distanceM}m del centro (radio permitido: ${state.settings.geo_max_m}m)`,
+              })
+            }
+          }
+          // null = sin geocerca configurada (no es novedad)
+
+          geoEvidence = {
+            lat:        loc.latitude,
+            lng:        loc.longitude,
+            accuracy_m: Math.round(loc.accuracy),
+            in_range:   geofenceOk,
+            distance_m: distanceM,
+          }
+
+          // Actualizar estado visual de geocerca
+          setState((prev) => ({
+            ...prev,
+            location: loc,
+            geofenceStatus: geofenceOk === false ? 'outside' : geofenceOk === true ? 'inside' : 'no_geofence',
+            geofenceDistance: distanceM,
+          }))
+        } catch (err: any) {
+          novelties.push({
+            step: 'gps',
+            ok: false,
+            reason: `GPS no disponible: ${err?.message || 'Error desconocido'}`,
+          })
         }
       }
 
-      // 3) Construir evidencia geo + hard-block geofence
-      const lat0 = (profile as any).geofence_lat as number | null | undefined
-      const lng0 = (profile as any).geofence_lng as number | null | undefined
-
-      let geo: any = null
-      if (loc && state.settings.geo_enabled) {
-        let inRange: boolean | null = null
-        let distanceM: number | null = null
-
-        if (lat0 != null && lng0 != null) {
-          const { status, distance } = validateGeofence(loc.latitude, loc.longitude, lat0, lng0, state.settings.geo_max_m)
-          inRange = status === 'inside'
-          distanceM = distance
-        }
-
-        geo = {
-          lat: loc.latitude,
-          lng: loc.longitude,
-          accuracy_m: Math.round(loc.accuracy),
-          timestamp: loc.timestamp,
-          base_lat: lat0 ?? null,
-          base_lng: lng0 ?? null,
-          max_m: state.settings.geo_max_m,
-          distance_m: distanceM,
-          in_range: inRange,
-        }
-
-        if (inRange === false) {
-          const reason = `Fuera del rango permitido (${distanceM}m).`
-          await recordAttemptBestEffort({ ok: false, step: 'gps', action, reason, meta: { action, selfie, face, geo } })
-          setState((prev) => ({ ...prev, loading: false, error: reason }))
-          return false
-        }
+      // ── 3. Construir evidence ─────────────────────────────────────────────────
+      const device = {
+        device_id: deviceId,
+        ua:         navigator.userAgent,
+        tz:         Intl.DateTimeFormat().resolvedOptions().timeZone,
       }
 
-      // 4) Insert punch
       const evidence: any = {
         action,
-        notes: opts?.notes || null,
-        geo,
-        selfie,
-        face: face || {
-          provider: state.settings.face_enabled ? 'unknown' : 'disabled',
-          match: state.settings.face_enabled ? null : true,
-          score: null,
+        face: face ?? {
+          provider:  state.settings.face_enabled ? 'unknown' : 'disabled',
+          match:     state.settings.face_enabled ? null : true,
+          score:     null,
           threshold: state.settings.face_enabled ? state.settings.face_threshold : null,
+          reason:    null,
         },
-        device: {
-          device_id: deviceId,
-          ua: navigator.userAgent,
-          lang: navigator.language,
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        },
+        geo:      geoEvidence,
+        selfie,
+        notes:    opts?.notes || null,
+        device,
+        novelties,
       }
 
+      // ── 4. Insert attendance.punches (SIEMPRE) ────────────────────────────────
       const payload: any = {
-        tenant_id: profile.tenant_id,
-        employee_id: profile.employee_id,
-        punched_at: new Date().toISOString(),
-        source: 'web',
-        serial_no: null,
-        status: getWebPunchStatusDefault(),
+        tenant_id:    profile.tenant_id,
+        employee_id:  profile.employee_id,
+        punched_at,
+        source:       'web',
+        serial_no:    null,
+        // status omitido → la BD usa su DEFAULT (restricción 428C9)
         verification: getWebPunchVerificationDefault(),
         evidence,
       }
 
-      // Insert robusto: si evidence fuese TEXT en tu BD, reintentamos con JSON.stringify.
-      let { error } = await attendanceDb.from('punches').insert(payload)
+      let punchId: string | null = null
 
-      // Fallback 1: si evidence fuese TEXT en tu BD, reintentamos con JSON.stringify.
-      if (error && String(error.message || '').toLowerCase().includes('evidence')) {
-        try {
-          const retryPayload = { ...payload, evidence: JSON.stringify(evidence) }
-          ;({ error } = await attendanceDb.from('punches').insert(retryPayload))
-        } catch {
-          // dejamos que el error original fluya
+      let { data: punchData, error: punchError } = await attendanceDb
+        .from('punches')
+        .insert(payload)
+        .select('id')
+        .single()
+
+      // Fallback: evidence como TEXT
+      if (punchError && String(punchError.message || '').toLowerCase().includes('evidence')) {
+        const retryPayload = { ...payload, evidence: JSON.stringify(evidence) }
+        ;({ data: punchData, error: punchError } = await attendanceDb
+          .from('punches').insert(retryPayload).select('id').single())
+      }
+
+      // Fallback: columnas opcionales (verification / serial_no / serial)
+      if (punchError && String(punchError.code || '') === '42703') {
+        const msg = String(punchError.message || '').toLowerCase()
+        const { verification, serial_no, serial, ...base } = payload
+        if (msg.includes('verification')) {
+          ;({ data: punchData, error: punchError } = await attendanceDb
+            .from('punches').insert(base).select('id').single())
+        } else if (msg.includes('serial_no')) {
+          ;({ data: punchData, error: punchError } = await attendanceDb
+            .from('punches').insert({ ...base, serial: null }).select('id').single())
+        } else if (msg.includes('serial')) {
+          ;({ data: punchData, error: punchError } = await attendanceDb
+            .from('punches').insert({ ...base, serial_no: null }).select('id').single())
         }
       }
 
-      // Fallback 2: compatibilidad de columnas (serial_no/serial y verification opcional)
-      if (error && String(error.code || '') === '42703') {
-        const msg = String(error.message || '').toLowerCase()
-
-        // Si no existe verification, reintenta sin ella
-        if (msg.includes('verification') && 'verification' in payload) {
-          const { verification, ...rest } = payload
-          ;({ error } = await attendanceDb.from('punches').insert(rest))
-        }
-
-        // Si no existe serial_no, reintenta usando serial
-        if (error && msg.includes('serial_no') && 'serial_no' in payload) {
-          const { serial_no, ...rest } = payload
-          ;({ error } = await attendanceDb.from('punches').insert({ ...rest, serial: null }))
-        }
-
-        // Si no existe serial (entorno viejo), reintenta usando serial_no
-        if (error && msg.includes('serial') && !msg.includes('serial_no') && 'serial' in payload) {
-          const { serial, ...rest } = payload
-          ;({ error } = await attendanceDb.from('punches').insert({ ...rest, serial_no: null }))
-        }
-      }
-
-      if (error) {
-        const reason = `No se pudo registrar: ${error.message} (${error.code})`
-        await recordAttemptBestEffort({ ok: false, step: 'insert', action, reason, meta: { action, selfie, face, geo, err: error } })
+      if (punchError) {
+        const reason = `No se pudo registrar: ${punchError.message} (${punchError.code})`
+        await recordAttemptBestEffort({
+          ok: false, step: 'insert', action, reason,
+          meta: { action, selfie, face, geo: geoEvidence, err: punchError },
+        })
         setState((prev) => ({ ...prev, loading: false, error: reason }))
         return false
       }
 
-      setState((prev) => ({ ...prev, loading: false, success: 'Marcación registrada.', biometricStatus: 'idle', biometricResult: null }))
+      punchId = (punchData as any)?.id ?? null
+
+      // ── 5a. Insert attendance.punch_evidence (best-effort) ───────────────────
+      if (punchId) {
+        try {
+          const { data: evData, error: evError } = await attendanceDb
+            .from('punch_evidence')
+            .insert({
+              punch_id:            punchId,
+              tenant_id:           profile.tenant_id,
+              employee_id:         profile.employee_id,
+              selfie_bucket:       selfie?.bucket ?? null,
+              selfie_path:         selfie?.path ?? null,
+              selfie_uploaded_at:  selfie ? new Date().toISOString() : null,
+              latitude:            loc?.latitude ?? null,
+              longitude:           loc?.longitude ?? null,
+              gps_accuracy_m:      loc ? Math.round(loc.accuracy) : null,
+              distance_to_fence_m: distanceM ? Math.round(distanceM) : null,
+              geofence_ok:         geofenceOk,
+              device_info:         device,
+              verification_status: 'pending',
+            })
+            .select('id')
+            .single()
+          if (evError) {
+            console.warn('[ATTENDANCE] punch_evidence insert error (best-effort):', evError.message)
+          } else {
+            console.info('[ATTENDANCE] punch_evidence insertado:', evData?.id)
+          }
+        } catch (e) {
+          console.warn('[ATTENDANCE] punch_evidence insert excepción (best-effort):', e)
+        }
+      }
+
+      // ── 5b. Insert attendance.attendance_records (best-effort) ────────────────
+      try {
+        console.log('[ATTENDANCE] insertando attendance_record...')
+        const { error: arError } = await attendanceDb.from('attendance_records').insert({
+          employee_id:        profile.employee_id,
+          tenant_id:          profile.tenant_id,
+          timestamp:          punched_at,
+          type:               action,
+          face_verified:      faceVerified,
+          geofence_ok:        geofenceOk,
+          latitude:           loc?.latitude    ?? null,
+          longitude:          loc?.longitude   ?? null,
+          gps_accuracy:       loc ? Math.round(loc.accuracy) : null,
+          distance_meters:    distanceM,
+          photo_capture_path: selfie?.path     ?? null,
+          device_info:        device,
+        })
+        console.log('[ATTENDANCE] attendance_record resultado:', arError)
+      } catch (e) {
+        console.warn('[ATTENDANCE] attendance_records insert excepción (best-effort):', e)
+      }
+
+      // ── 6. Registrar novedades en punch_attempts ──────────────────────────────
+      for (const nov of novelties) {
+        await recordAttemptBestEffort({
+          ok:     false,
+          step:   nov.step as PunchAttempt['step'],
+          action,
+          reason: nov.reason,
+          meta:   { punch_id: punchId, face, geo: geoEvidence },
+        })
+      }
+      // Siempre registrar el insert exitoso
+      await recordAttemptBestEffort({
+        ok:     true,
+        step:   'insert',
+        action,
+        reason: null,
+        meta:   { punch_id: punchId },
+      })
+
+      // ── 7. Mensaje UX ─────────────────────────────────────────────────────────
+      const successMsg = novelties.length > 0
+        ? `Marcación registrada con ${novelties.length} novedad${novelties.length > 1 ? 'es' : ''}.`
+        : 'Marcación registrada.'
+
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        success: successMsg,
+        biometricStatus: 'idle',
+        biometricResult: null,
+      }))
       await loadTodayPunches()
       await loadTodayAttempts()
       return true
@@ -577,7 +680,7 @@ export const useAttendance = (profile: UserProfile | null) => {
       state.settings.geo_max_m,
       state.settings.face_enabled,
       state.settings.face_threshold,
-      captureLocation,
+      state.settings.selfie_required,
       deviceId,
       loadTodayPunches,
       loadTodayAttempts,
@@ -585,6 +688,120 @@ export const useAttendance = (profile: UserProfile | null) => {
       recordAttemptBestEffort,
       validateSequence,
     ]
+  )
+
+  // === registerPunchForced — marcar aunque el rostro no coincida ===============
+  // Llamado desde ClockInPage cuando el empleado elige "Marcar de todas formas"
+  const registerPunchForced = useCallback(
+    async (
+      action: PunchAttempt['action'],
+      opts?: { notes?: string; selfieBlob?: Blob | null }
+    ) => {
+      if (!profile) {
+        setState((prev) => ({ ...prev, error: 'No hay perfil cargado.' }))
+        return false
+      }
+
+      setState((prev) => ({ ...prev, loading: true, error: null, success: null, biometricStatus: 'uploading', biometricResult: null }))
+
+      const punched_at = new Date().toISOString()
+      const novelties: Array<{ step: string; ok: boolean; reason: string }> = []
+
+      let selfie: { bucket: string; path: string } | null = null
+      let face: FaceResult | null = null
+
+      if (opts?.selfieBlob) {
+        try {
+          const prefix = todayPathPrefix(profile.tenant_id, profile.employee_id)
+          const path = `${prefix}/${crypto.randomUUID()}.jpg`
+          await uploadSelfie({ bucket: SELFIE_BUCKET as any, path, blob: opts.selfieBlob })
+          selfie = { bucket: SELFIE_BUCKET, path }
+          face = { match: false, score: null, threshold: null, provider: 'forced_by_employee', reason: 'Marcado forzado tras rechazo facial' }
+          novelties.push({ step: 'face', ok: false, reason: 'Rostro no coincide — marcado forzado por empleado (requiere revision del supervisor)' })
+        } catch (e: any) {
+          novelties.push({ step: 'face', ok: false, reason: `Error subiendo selfie: ${e?.message}` })
+        }
+      } else {
+        novelties.push({ step: 'face', ok: false, reason: 'Sin selfie — marcado forzado por empleado' })
+      }
+
+      let loc: GeoLocation | null = null
+      let geoEvidence: any = null
+      let geofenceOk: boolean | null = null
+      let distanceM: number | null = null
+
+      if (state.settings.geo_enabled) {
+        try {
+          loc = await getCurrentPosition()
+          const lat0 = (profile as any).geofence_lat as number | null | undefined
+          const lng0 = (profile as any).geofence_lng as number | null | undefined
+          if (lat0 != null && lng0 != null) {
+            const { status, distance } = validateGeofence(loc.latitude, loc.longitude, lat0, lng0, state.settings.geo_max_m)
+            geofenceOk = status === 'inside'
+            distanceM = distance
+          }
+          geoEvidence = { lat: loc.latitude, lng: loc.longitude, accuracy_m: Math.round(loc.accuracy), in_range: geofenceOk, distance_m: distanceM }
+          setState((prev) => ({ ...prev, location: loc, geofenceStatus: geofenceOk === false ? 'outside' : geofenceOk === true ? 'inside' : 'no_geofence', geofenceDistance: distanceM }))
+        } catch (err: any) {
+          novelties.push({ step: 'gps', ok: false, reason: `GPS no disponible: ${err?.message}` })
+        }
+      }
+
+      const device = { device_id: deviceId, ua: navigator.userAgent, tz: Intl.DateTimeFormat().resolvedOptions().timeZone }
+      const evidence: any = {
+        action,
+        face: face ?? { provider: 'forced_by_employee', match: false, score: null, threshold: null, reason: 'Marcado forzado' },
+        geo: geoEvidence, selfie, notes: opts?.notes || null, device, novelties, forced: true,
+      }
+
+      const payload: any = {
+        tenant_id: profile.tenant_id, employee_id: profile.employee_id,
+        punched_at, source: 'web', serial_no: null,
+        verification: getWebPunchVerificationDefault(), evidence,
+      }
+
+      let punchId: string | null = null
+      let { data: punchData, error: punchError } = await attendanceDb.from('punches').insert(payload).select('id').single()
+
+      if (punchError && String(punchError.message || '').toLowerCase().includes('evidence')) {
+        ;({ data: punchData, error: punchError } = await attendanceDb.from('punches').insert({ ...payload, evidence: JSON.stringify(evidence) }).select('id').single())
+      }
+
+      if (punchError) {
+        setState((prev) => ({ ...prev, loading: false, error: `No se pudo registrar: ${punchError!.message}` }))
+        return false
+      }
+
+      punchId = (punchData as any)?.id ?? null
+
+      if (punchId && selfie) {
+        try {
+          await attendanceDb.from('punch_evidence').insert({
+            punch_id: punchId, tenant_id: profile.tenant_id, employee_id: profile.employee_id,
+            selfie_bucket: selfie.bucket, selfie_path: selfie.path,
+            selfie_uploaded_at: new Date().toISOString(),
+            latitude: loc?.latitude ?? null, longitude: loc?.longitude ?? null,
+            gps_accuracy_m: loc ? Math.round(loc.accuracy) : null,
+            distance_to_fence_m: distanceM ? Math.round(distanceM) : null,
+            geofence_ok: geofenceOk, device_info: device,
+            verification_status: 'rejected',
+            verification_notes: 'Marcado forzado por empleado — requiere revision del supervisor',
+            verified_at: new Date().toISOString(),
+          }).select('id').single()
+        } catch (e) { console.warn('[ATTENDANCE] punch_evidence forced insert error:', e) }
+      }
+
+      for (const nov of novelties) {
+        await recordAttemptBestEffort({ ok: false, step: nov.step as PunchAttempt['step'], action, reason: nov.reason, meta: { punch_id: punchId } })
+      }
+      await recordAttemptBestEffort({ ok: true, step: 'insert', action, reason: 'Forzado por empleado tras rechazo facial', meta: { punch_id: punchId } })
+
+      setState((prev) => ({ ...prev, loading: false, success: 'Marcacion registrada como novedad. El supervisor revisara la fotografia.', biometricStatus: 'idle', biometricResult: null }))
+      await loadTodayPunches()
+      await loadTodayAttempts()
+      return true
+    },
+    [profile, state.settings.geo_enabled, state.settings.geo_max_m, deviceId, loadTodayPunches, loadTodayAttempts, recordAttemptBestEffort]
   )
 
   // === Public API ===
@@ -637,8 +854,10 @@ export const useAttendance = (profile: UserProfile | null) => {
     breakStart,
     breakEnd,
     registerPunch,
+    registerPunchForced,
     // ui helpers
     clearMessages: () => setState((p) => ({ ...p, error: null, success: null })),
     resetBiometric: () => setState((p) => ({ ...p, biometricStatus: 'idle', biometricResult: null })),
   }
 }
+

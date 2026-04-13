@@ -102,7 +102,8 @@ Deno.serve(async (req) => {
           'content-type': 'application/json',
           ...(apiKey ? { 'x-api-key': apiKey } : {}),
         },
-        body: JSON.stringify({
+       body: JSON.stringify({
+          secret: apiKey,
           tenant_id: body.tenant_id,
           employee_id: body.employee_id,
           selfie: body.selfie,

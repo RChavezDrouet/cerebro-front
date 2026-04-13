@@ -70,6 +70,22 @@ async function fetchOrgUnitFallbacks(tenantId: string, employeeIds: string[]): P
   return out
 }
 
+async function fetchEmployeeProfileWorkModes(employeeIds: string[]): Promise<Record<string, string>> {
+  if (!employeeIds.length) return {}
+
+  const { data: profiles } = await supabase
+    .schema('attendance')
+    .from('employee_profile')
+    .select('employee_id, work_mode')
+    .in('employee_id', employeeIds)
+
+  const out: Record<string, string> = {}
+  ;(profiles ?? []).forEach((p: any) => {
+    if (p?.employee_id && p?.work_mode) out[p.employee_id] = String(p.work_mode).toUpperCase()
+  })
+  return out
+}
+
 async function fetchEmployees(tenantId: string): Promise<Row[]> {
   const v = await supabase
     .schema('public')
@@ -83,6 +99,9 @@ async function fetchEmployees(tenantId: string): Promise<Row[]> {
     .order('created_at', { ascending: false })
 
   if (!v.error && v.data) {
+    const ids = (v.data as any[]).map((r: any) => r.id).filter(Boolean)
+    const profileMap = await fetchEmployeeProfileWorkModes(ids)
+
     const base = (v.data as any[]).map(r => ({
       id: r.id,
       employee_code: r.employee_code ?? null,
@@ -91,7 +110,7 @@ async function fetchEmployees(tenantId: string): Promise<Row[]> {
       employment_status: r.employment_status ?? null,
       attendance_status: r.attendance_status ?? null,
       department_name: r.department_name ?? null,
-      work_mode: r.work_mode ?? 'PRESENCIAL',
+      work_mode: profileMap[r.id] ?? r.work_mode ?? 'PRESENCIAL',
       is_department_head: Boolean(r.is_department_head),
     }))
 

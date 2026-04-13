@@ -1,6 +1,6 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarDays, UploadCloud, Clock3, Settings2 } from 'lucide-react'
+import { CalendarDays, UploadCloud, Clock3, Settings2, Bell } from 'lucide-react'
 
 import { Card } from '@/components/ui/Card'
 
@@ -40,30 +40,40 @@ export default function AttendanceHomePage() {
       <div>
         <h1 className="text-xl font-bold">Asistencia &amp; RRHH</h1>
         <p className="mt-1 text-sm text-white/60">
-          Acceso rápido al reporte operativo diario, importación USB y parametrización de turnos y horarios.
+          Acceso rápido al reporte operativo diario, novedades, importación USB y parametrización de turnos y horarios.
         </p>
       </div>
 
       <Card title="Módulos principales" subtitle="Versión saneada y alineada con el flujo operativo vigente.">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
           <ActionCard
             icon={<CalendarDays size={20} />}
             title="Reporte diario"
             desc="Entrada, comida, salida, estado del día y fuente de marcación."
             onClick={() => nav('/attendance/daily')}
           />
+
+          <ActionCard
+            icon={<Bell size={20} />}
+            title="Reporte de novedades"
+            desc="Consulta y resolución de novedades de asistencia de subordinados."
+            onClick={() => nav('/attendance/novelties')}
+          />
+
           <ActionCard
             icon={<UploadCloud size={20} />}
             title="Importación USB"
             desc="Carga masiva de marcaciones desde XLSX o CSV usando la RPC de importación."
             onClick={() => nav('/attendance/usb-import')}
           />
+
           <ActionCard
             icon={<Clock3 size={20} />}
             title="Turnos"
             desc="Configura días activos, tipo de turno y color para dashboards y reportes."
             onClick={() => nav('/config/turnos')}
           />
+
           <ActionCard
             icon={<Settings2 size={20} />}
             title="Horarios"

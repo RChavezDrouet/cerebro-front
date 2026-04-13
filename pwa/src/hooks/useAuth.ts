@@ -1,27 +1,17 @@
 // =============================================
 // HRCloud Attendance PWA - Auth Hook
-// v3 — columnas alineadas al esquema real documentado en v4.8.7
+// v5.0 — Abril 2026
 //
-// attendance.employees columnas reales:
-//   id, tenant_id, user_id, first_name, last_name,
-//   status, employee_code, biometric_employee_code,
-//   work_mode, photo_path, geofence_lat, geofence_lng,
-//   allow_remote_pwa, first_login_pending
+// FUENTE DE IDENTIDAD: public.profiles (.single() — siempre tiene registro)
+// FUENTE OPERATIVA: attendance.employees (best-effort, maybeSingle)
 //
-// attendance.employee_profile columnas nuevas (autogestión PWA):
-//   employee_id, phone, address, geofence_radius_m,
-//   pwa_self_service_enabled, pwa_self_service_locked,
-//   pwa_self_service_completed_at
-//
-// public.profiles columnas:
-//   id (= auth user id), tenant_id, employee_id, role,
-//   is_active, first_login_pending
-//
-// Ruta: src/hooks/useAuth.ts
+// BOOTSTRAP:
+//   getSession() al montar → token garantizado listo.
+//   onAuthStateChange solo gestiona SIGNED_IN / SIGNED_OUT / TOKEN_REFRESHED.
 // =============================================
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { supabase, safeSelect } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
 import type { UserProfile } from '../types'
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js'
 
@@ -33,122 +23,80 @@ interface AuthState {
   error: string | null
 }
 
-const PROFILE_TIMEOUT_MS = 12000
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = window.setTimeout(() => {
-      reject(new Error(`Timeout cargando ${label}`))
-    }, ms)
-    promise
-      .then((value) => { window.clearTimeout(timer); resolve(value) })
-      .catch((err)  => { window.clearTimeout(timer); reject(err) })
-  })
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
-// attendance.employees — columnas confirmadas en doc v4.8.7
-// Estrategia: intentar con columnas completas, degradar si hay error 42703
+// Fuente principal: public.profiles
+//   Siempre tiene registro → nunca falla. Da: tenant_id, employee_id, role,
+//   is_active, first_login_pending.
+//
+// Fuente secundaria (best-effort): attendance.employees
+//   Da nombre, work_mode, foto, geofence, etc. Si falla, se usan defaults.
 // ─────────────────────────────────────────────────────────────────────────────
-async function selectAttendanceEmployeeByUser(userId: string) {
-  const candidates = [
-    // Completo según doc v4.8.7
-    'id,tenant_id,user_id,first_name,last_name,status,employee_code,biometric_employee_code,work_mode,photo_path,geofence_lat,geofence_lng,allow_remote_pwa,first_login_pending',
-    // Sin columnas opcionales que pueden no existir aún en ambientes parciales
-    'id,tenant_id,user_id,first_name,last_name,status,employee_code,biometric_employee_code,work_mode,photo_path,geofence_lat,geofence_lng',
-    // Sin photo_path ni geofence
-    'id,tenant_id,user_id,first_name,last_name,status,employee_code,biometric_employee_code,work_mode',
-    // Mínimo absoluto para resolver identidad
-    'id,tenant_id,user_id,first_name,last_name,status',
-    'id,tenant_id,user_id,first_name,last_name',
-  ]
+async function resolveProfile(user: User): Promise<UserProfile> {
+  // ── 1. Identidad garantizada ──────────────────────────────────────────────
+  console.log('[AUTH] consultando profiles...')
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('tenant_id, employee_id, role, is_active, first_login_pending')
+    .eq('id', user.id)
+    .single()
 
-  for (const cols of candidates) {
-    const data = await safeSelect<any>(() =>
-      supabase
-        .schema('attendance')
-        .from('employees')
-        .select(cols)
-        .eq('user_id', userId)
-        .maybeSingle()
-    )
-    if (data) return data
+  console.log('[AUTH] profiles resultado:', profile, profileError)
+
+  if (profileError) {
+    throw new Error(`profiles: ${profileError.message}`)
   }
-  return null
-}
-
-async function selectAttendanceEmployeeById(employeeId: string) {
-  const candidates = [
-    'id,tenant_id,user_id,first_name,last_name,status,employee_code,biometric_employee_code,work_mode,photo_path,geofence_lat,geofence_lng,allow_remote_pwa,first_login_pending',
-    'id,tenant_id,user_id,first_name,last_name,status,employee_code,biometric_employee_code,work_mode,photo_path,geofence_lat,geofence_lng',
-    'id,tenant_id,user_id,first_name,last_name,status,employee_code,biometric_employee_code,work_mode',
-    'id,tenant_id,user_id,first_name,last_name,status',
-    'id,tenant_id,user_id,first_name,last_name',
-  ]
-
-  for (const cols of candidates) {
-    const data = await safeSelect<any>(() =>
-      supabase
-        .schema('attendance')
-        .from('employees')
-        .select(cols)
-        .eq('id', employeeId)
-        .maybeSingle()
-    )
-    if (data) return data
+  if (!profile?.tenant_id || !profile?.employee_id) {
+    throw new Error('No se pudo resolver tenant/employee. Verifica public.profiles.')
   }
-  return null
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// public.employees — fallback cuando el user_id está vinculado en public
-// (empleados creados desde Base antes de migración a attendance)
-// ─────────────────────────────────────────────────────────────────────────────
-async function selectPublicEmployeeByUser(userId: string) {
-  const candidates = [
-    'id,tenant_id,user_id,first_name,last_name,employment_status,employee_code',
-    'id,tenant_id,user_id,first_name,last_name,employment_status',
-    'id,tenant_id,user_id,first_name,last_name',
-  ]
-
-  for (const cols of candidates) {
-    const data = await safeSelect<any>(() =>
-      supabase
-        .schema('public')
-        .from('employees')
-        .select(cols)
-        .eq('user_id', userId)
-        .maybeSingle()
-    )
-    if (data) return data
+  if (profile.is_active === false) {
+    throw new Error('Usuario inactivo. Contacta a tu administrador.')
   }
-  return null
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// attendance.employee_profile — columnas NUEVAS del paquete de autogestión PWA
-// Esta tabla puede no existir en ambientes no migrados → siempre best-effort
-// ─────────────────────────────────────────────────────────────────────────────
-async function selectEmployeeProfile(employeeId: string) {
-  const candidates = [
-    'employee_id,phone,address,geofence_radius_m,pwa_self_service_enabled,pwa_self_service_locked,pwa_self_service_completed_at',
-    'employee_id,phone,address,geofence_radius_m',
-    'employee_id,phone,address',
-    'employee_id',
-  ]
-
-  for (const cols of candidates) {
-    const data = await safeSelect<any>(() =>
-      supabase
-        .schema('attendance')
-        .from('employee_profile')
-        .select(cols)
-        .eq('employee_id', employeeId)
-        .maybeSingle()
+  // ── 2. Datos operativos del empleado (best-effort) ────────────────────────
+  console.log('[AUTH] consultando attendance.employees...')
+  const { data: emp } = await supabase
+    .schema('attendance')
+    .from('employees')
+    .select(
+      'first_name, last_name, employee_code, biometric_employee_code, ' +
+      'work_mode, photo_path, geofence_lat, geofence_lng, allow_remote_pwa'
     )
-    if (data !== null && data !== undefined) return data
+    .eq('id', profile.employee_id)
+    .maybeSingle()
+
+  console.log('[AUTH] employees resultado:', emp)
+
+  const fullName = emp
+    ? `${emp.first_name ?? ''} ${emp.last_name ?? ''}`.trim()
+    : ''
+
+  const result: UserProfile = {
+    id:        user.id,
+    email:     user.email ?? '',
+    full_name: fullName || user.email || 'Empleado',
+    role:      profile.role ?? 'employee',
+
+    tenant_id:   profile.tenant_id,
+    employee_id: profile.employee_id,
+
+    employee_code:           emp?.employee_code           ?? undefined,
+    biometric_employee_code: emp?.biometric_employee_code ?? null,
+    work_mode:               emp?.work_mode               ?? undefined,
+    photo_path:              emp?.photo_path               ?? null,
+    geofence_lat:            emp?.geofence_lat             ?? null,
+    geofence_lng:            emp?.geofence_lng             ?? null,
+    geofence_radius_m:       null,
+
+    allow_remote_pwa:    emp?.allow_remote_pwa    ?? true,
+    first_login_pending: profile.first_login_pending ?? false,
+
+    pwa_self_service_enabled:      false,
+    pwa_self_service_locked:       false,
+    pwa_self_service_completed_at: null,
   }
-  return null
+  console.log('[AUTH] perfil cargado:', result.employee_id)
+  return result
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -166,231 +114,30 @@ export const useAuth = () => {
   const mountedRef       = useRef(true)
   const requestSeqRef    = useRef(0)
   const profileLoadedRef = useRef(false)
-  const bootstrappedRef  = useRef(false)
 
-  const resolveProfile = useCallback(async (user: User): Promise<UserProfile> => {
-
-    // ── Paso 1: resolver tenant_id + employee_id desde múltiples fuentes ──────
-    const [ua, publicProfile, attEmpByUser, pubEmpByUser] = await Promise.all([
-      withTimeout(
-        safeSelect<{
-          tenant_id: string
-          employee_id: string | null
-          role: string
-          is_active: boolean
-        }>(() =>
-          supabase
-            .schema('attendance')
-            .from('user_accounts')
-            .select('tenant_id, employee_id, role, is_active')
-            .eq('user_id', user.id)
-            .maybeSingle()
-        ),
-        PROFILE_TIMEOUT_MS,
-        'attendance.user_accounts'
-      ),
-      withTimeout(
-        safeSelect<{
-          tenant_id: string
-          employee_id: string | null
-          role: string | null
-          is_active: boolean | null
-          first_login_pending: boolean | null
-        }>(() =>
-          supabase
-            .from('profiles')
-            .select('tenant_id, employee_id, role, is_active, first_login_pending')
-            .eq('id', user.id)
-            .maybeSingle()
-        ),
-        PROFILE_TIMEOUT_MS,
-        'public.profiles'
-      ),
-      withTimeout(
-        selectAttendanceEmployeeByUser(user.id),
-        PROFILE_TIMEOUT_MS,
-        'attendance.employees by user_id'
-      ),
-      withTimeout(
-        selectPublicEmployeeByUser(user.id),
-        PROFILE_TIMEOUT_MS,
-        'public.employees by user_id'
-      ).catch(() => null),
-    ])
-
-    const tenantId   = ua?.tenant_id  ?? publicProfile?.tenant_id  ?? attEmpByUser?.tenant_id ?? pubEmpByUser?.tenant_id
-    const employeeId = ua?.employee_id ?? publicProfile?.employee_id ?? attEmpByUser?.id       ?? pubEmpByUser?.id
-    const isActive   = ua?.is_active   ?? publicProfile?.is_active   ?? true
-
-    if (!tenantId || !employeeId || isActive === false) {
-      throw new Error(
-        'No se pudo resolver tenant/employee para este usuario. ' +
-        'Verifica attendance.user_accounts, public.profiles y attendance.employees.'
-      )
-    }
-
-    // ── Paso 2: datos completos en paralelo ───────────────────────────────────
-    const [attEmp, empProfile, tenant, selfServiceRaw] = await Promise.all([
-
-      // Datos principales — attendance.employees (geofence, photo_path, work_mode)
-      withTimeout(
-        selectAttendanceEmployeeById(employeeId),
-        PROFILE_TIMEOUT_MS,
-        'attendance.employees by id'
-      ),
-
-      // Datos de autogestión — attendance.employee_profile (tabla nueva, opcional)
-      withTimeout(
-        selectEmployeeProfile(employeeId),
-        PROFILE_TIMEOUT_MS,
-        'attendance.employee_profile'
-      ).catch(() => null),
-
-      // Tenant
-      withTimeout(
-        safeSelect<any>(() =>
-          supabase
-            .from('tenants')
-            .select('id,business_name,status,is_suspended,suspension_reason')
-            .eq('id', tenantId)
-            .maybeSingle()
-        ),
-        PROFILE_TIMEOUT_MS,
-        'public.tenants'
-      ),
-
-      // RPC consolidado — opcional, no bloquea el login si falla
-      withTimeout(
-        safeSelect<any>(() =>
-          supabase.schema('attendance').rpc('get_my_pwa_self_service_profile')
-        ),
-        PROFILE_TIMEOUT_MS,
-        'attendance.get_my_pwa_self_service_profile'
-      ).catch(() => null),
-    ])
-
-    const ss = Array.isArray(selfServiceRaw) ? selfServiceRaw[0] : selfServiceRaw
-
-    const fullName =
-      (ss        ? `${ss.first_name        ?? ''} ${ss.last_name        ?? ''}`.trim() : '') ||
-      (attEmp    ? `${attEmp.first_name    ?? ''} ${attEmp.last_name    ?? ''}`.trim() : '') ||
-      (attEmpByUser ? `${attEmpByUser.first_name ?? ''} ${attEmpByUser.last_name ?? ''}`.trim() : '') ||
-      user.email ||
-      'Empleado'
-
-    return {
-      id:        user.id,
-      email:     ss?.email ?? user.email ?? '',
-      full_name: fullName,
-      role:      ua?.role  ?? publicProfile?.role ?? 'employee',
-
-      tenant_id:             tenantId,
-      tenant_name:           tenant?.business_name    ?? 'Empresa',
-      tenant_status:         tenant?.status           ?? null,
-      tenant_is_suspended:   tenant?.is_suspended     ?? null,
-      tenant_paused_message: tenant?.suspension_reason ?? null,
-
-      employee_id: employeeId,
-
-      // ── Identidad — attendance.employees ─────────────────────────────────
-      employee_code:
-        ss?.employee_code         ??
-        attEmp?.employee_code     ??
-        attEmpByUser?.employee_code ??
-        pubEmpByUser?.employee_code ??
-        undefined,
-
-      biometric_employee_code:
-        ss?.biometric_employee_code         ??
-        attEmp?.biometric_employee_code     ??
-        attEmpByUser?.biometric_employee_code ??
-        null,
-
-      // ── Perfil operativo — attendance.employees (doc v4.8.7) ─────────────
-      work_mode:
-        ss?.work_mode         ??
-        attEmp?.work_mode     ??
-        attEmpByUser?.work_mode ??
-        undefined,
-
-      photo_path:
-        attEmp?.photo_path     ??
-        attEmpByUser?.photo_path ??
-        null,
-
-      geofence_lat:
-        ss?.geofence_lat         ??
-        attEmp?.geofence_lat     ??
-        attEmpByUser?.geofence_lat ??
-        null,
-
-      geofence_lng:
-        ss?.geofence_lng         ??
-        attEmp?.geofence_lng     ??
-        attEmpByUser?.geofence_lng ??
-        null,
-
-      // ── Columnas nuevas de autogestión — attendance.employee_profile ──────
-      geofence_radius_m:
-        ss?.geofence_radius_m    ??
-        empProfile?.geofence_radius_m ??
-        null,
-
-      phone:
-        ss?.phone    ??
-        empProfile?.phone ??
-        null,
-
-      address:
-        ss?.address    ??
-        empProfile?.address ??
-        null,
-
-      pwa_self_service_enabled:
-        ss?.pwa_self_service_enabled    ??
-        empProfile?.pwa_self_service_enabled ??
-        false,
-
-      pwa_self_service_locked:
-        ss?.pwa_self_service_locked    ??
-        empProfile?.pwa_self_service_locked ??
-        false,
-
-      pwa_self_service_completed_at:
-        ss?.pwa_self_service_completed_at    ??
-        empProfile?.pwa_self_service_completed_at ??
-        null,
-
-      // ── Flags de acceso — attendance.employees + public.profiles ─────────
-      allow_remote_pwa:
-        attEmp?.allow_remote_pwa     ??
-        attEmpByUser?.allow_remote_pwa ??
-        true,   // permisivo por defecto para no bloquear UAT
-
-      first_login_pending:
-        publicProfile?.first_login_pending ??
-        attEmp?.first_login_pending        ??
-        false,
-    }
-  }, [])
-
-  // ── loadProfile ─────────────────────────────────────────────────────────────
-  const loadProfile = useCallback(async (user: User) => {
+  // ── loadProfile ──────────────────────────────────────────────────────────────
+  const loadProfile = useCallback(async (user: User, session: Session | null) => {
     const requestId = ++requestSeqRef.current
+    console.log('[AUTH] loadProfile iniciado, requestId:', requestId)
+
+    if (!session?.access_token) {
+      console.log('[AUTH] sin token válido, abortando loadProfile')
+      setState((prev) => ({ ...prev, loading: false, error: null }))
+      return
+    }
 
     setState((prev) => ({ ...prev, loading: true, error: null }))
 
+    console.log('[AUTH] token presente, exp:', session?.expires_at, 'ahora:', Math.floor(Date.now() / 1000))
+
     try {
       const profile = await resolveProfile(user)
-
       if (!mountedRef.current || requestId !== requestSeqRef.current) return
-
       profileLoadedRef.current = true
       setState((prev) => ({ ...prev, user, profile, loading: false, error: null }))
     } catch (err: any) {
-      console.error('Error cargando perfil:', err)
+      console.log('[AUTH] error en catch:', err)
       if (!mountedRef.current || requestId !== requestSeqRef.current) return
-
       profileLoadedRef.current = false
       setState((prev) => ({
         ...prev,
@@ -399,73 +146,57 @@ export const useAuth = () => {
         error: err?.message || 'Error cargando perfil del empleado.',
       }))
     }
-  }, [resolveProfile])
+  }, [])
 
-  // ── Bootstrap y listener de sesión ──────────────────────────────────────────
+  // ── Bootstrap ────────────────────────────────────────────────────────────────
+  // REGLA: loadProfile SOLO se llama desde SIGNED_IN y TOKEN_REFRESHED.
+  // INITIAL_SESSION puede dispararse durante _recoverAndRefresh con un token
+  // aún no válido → solo actualiza UI, nunca carga perfil.
   useEffect(() => {
     mountedRef.current = true
 
-    const bootstrap = async () => {
-      try {
-        setState((prev) => ({ ...prev, loading: true, error: null }))
-
-        const { data: { session }, error } = await supabase.auth.getSession()
-        if (error) throw error
-        if (!mountedRef.current) return
-
-        bootstrappedRef.current = true
-
-        if (session?.user) {
-          setState((prev) => ({ ...prev, user: session.user, session, loading: true, error: null }))
-          await loadProfile(session.user)
-        } else {
-          profileLoadedRef.current = false
-          setState({ user: null, session: null, profile: null, loading: false, error: null })
-        }
-      } catch (err: any) {
-        console.error('Error en bootstrap auth:', err)
-        if (!mountedRef.current) return
-
-        profileLoadedRef.current = false
-        setState({
-          user: null, session: null, profile: null, loading: false,
-          error: err?.message || 'No se pudo inicializar la sesión.',
-        })
-      }
-    }
-
-    void bootstrap()
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event: AuthChangeEvent, session: Session | null) => {
+      (event: AuthChangeEvent, session: Session | null) => {
         if (!mountedRef.current) return
-
         const user = session?.user ?? null
 
         switch (event) {
           case 'INITIAL_SESSION': {
-            if (!bootstrappedRef.current && user) {
+            if (!user) {
+              // Sin sesión → mostrar login
+              setState({ user: null, session: null, profile: null, loading: false, error: null })
+            } else {
+              // Sesión presente pero token puede no estar listo → spinner, esperar TOKEN_REFRESHED o SIGNED_IN
               setState((prev) => ({ ...prev, user, session, loading: true, error: null }))
-              await loadProfile(user)
             }
             break
           }
+
           case 'SIGNED_IN': {
-            if (user) {
-              setState((prev) => ({ ...prev, user, session, loading: true, error: null }))
-              await loadProfile(user)
-            }
-            break
-          }
-          case 'TOKEN_REFRESHED': {
-            // CRÍTICO: NO bootstrap completo aquí — solo actualizar tokens
-            // Si se llama loadProfile en TOKEN_REFRESHED causa pantalla bloqueada post-marcación
-            setState((prev) => ({ ...prev, user, session, loading: false, error: null }))
             if (user && !profileLoadedRef.current) {
-              await loadProfile(user)
+              setState((prev) => ({ ...prev, user, session, loading: true, error: null }))
+              // setTimeout(0) escapa el mutex interno de Supabase auth.
+              // Sin esto, cualquier query dentro del callback se bloquea
+              // esperando que el mismo mutex se libere (deadlock).
+              const capturedUser = user
+              const capturedSession = session
+              setTimeout(() => { void loadProfile(capturedUser, capturedSession) }, 0)
+            } else {
+              setState((prev) => ({ ...prev, user, session, loading: false }))
             }
             break
           }
+
+          case 'TOKEN_REFRESHED': {
+            setState((prev) => ({ ...prev, user, session }))
+            if (user && !profileLoadedRef.current) {
+              const capturedUser = user
+              const capturedSession = session
+              setTimeout(() => { void loadProfile(capturedUser, capturedSession) }, 0)
+            }
+            break
+          }
+
           case 'USER_UPDATED': {
             setState((prev) => ({
               ...prev,
@@ -476,18 +207,15 @@ export const useAuth = () => {
             }))
             break
           }
+
           case 'SIGNED_OUT': {
             profileLoadedRef.current = false
             setState({ user: null, session: null, profile: null, loading: false, error: null })
             break
           }
-          default: {
-            if (user && !profileLoadedRef.current) {
-              setState((prev) => ({ ...prev, user, session, loading: true, error: null }))
-              await loadProfile(user)
-            }
+
+          default:
             break
-          }
         }
       }
     )
@@ -501,12 +229,10 @@ export const useAuth = () => {
   // ── Acciones públicas ────────────────────────────────────────────────────────
   const signIn = async (email: string, password: string) => {
     setState((prev) => ({ ...prev, loading: true, error: null }))
-
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     })
-
     if (error) {
       setState((prev) => ({
         ...prev,
@@ -527,8 +253,10 @@ export const useAuth = () => {
 
   const refreshProfile = useCallback(async () => {
     if (!state.user) return
-    await loadProfile(state.user)
-  }, [loadProfile, state.user])
+    profileLoadedRef.current = false
+    await loadProfile(state.user, state.session)
+  }, [loadProfile, state.user, state.session])
 
   return { ...state, signIn, signOut, refreshProfile }
 }
+// cache-bust: 2026-04-08

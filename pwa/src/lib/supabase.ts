@@ -18,7 +18,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storageKey: 'hrcloud_pwa_session',
+    // CRÍTICO: NO usar storageKey personalizado.
+    // Un storageKey diferente al default causa que el cliente mantenga
+    // una sesión en localStorage separada que no coincide con el token
+    // JWT real, haciendo que RLS bloquee todas las queries (devuelven
+    // null silenciosamente). Documentado en HRCloud aprendizajes v4.8.7.
+    // storageKey: 'hrcloud_pwa_session',  ← REMOVIDO
   },
 })
 
@@ -42,66 +47,13 @@ export async function safeSelect<T>(fn: () => any): Promise<T | null> {
 }
 
 /**
- * Obtiene el usuario autenticado actual
+ * Obtiene el usuario autenticado actual (validado contra el servidor).
  */
 export const getCurrentUser = async () => {
   const {
     data: { user },
     error,
   } = await supabase.auth.getUser()
-
   if (error) throw error
   return user
-}
-
-/**
- * Obtiene el tenant_id del usuario autenticado
- * Fuente principal: attendance.user_accounts
- * Fallback: public.profiles
- */
-export const getCurrentTenantId = async (): Promise<string | null> => {
-  const user = await getCurrentUser()
-  if (!user) return null
-
-  try {
-    const { data, error } = await supabase
-      .schema('attendance')
-      .from('user_accounts')
-      .select('tenant_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-
-    if (!error && data?.tenant_id) {
-      return data.tenant_id
-    }
-  } catch (err) {
-    console.warn('Fallback tenant_id: attendance.user_accounts no disponible.', err)
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('tenant_id')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (!error && data?.tenant_id) {
-      return data.tenant_id
-    }
-  } catch (err) {
-    console.warn('Fallback tenant_id: public.profiles no disponible.', err)
-  }
-
-  return null
-}
-
-/**
- * Helper para insertar con tenant_id
- */
-export const insertWithTenant = async (
-  table: string,
-  record: Record<string, unknown>,
-  tenantId: string
-) => {
-  return supabase.from(table).insert({ ...record, tenant_id: tenantId })
 }
