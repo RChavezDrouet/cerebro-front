@@ -5,17 +5,35 @@ import toast from 'react-hot-toast'
 
 import { Drawer } from '@/components/ui/Drawer'
 import { SideNav } from './SideNav'
+import { TenantGateBanner } from './TenantGateBanner'
 import { Button } from '@/components/ui/Button'
 import { supabase } from '@/config/supabase'
+import { useTenantGate } from '@/hooks/useTenantGate'
 
 export function AppShell() {
   const [open, setOpen] = React.useState(false)
   const nav = useNavigate()
 
+  const { loading: gateLoading, blocked, title, body } = useTenantGate()
+
   const signOut = async () => {
     await supabase.auth.signOut()
     toast.success('Sesión cerrada')
     nav('/login', { replace: true })
+  }
+
+  // Mientras verifica el estado del tenant, mostrar spinner mínimo
+  if (gateLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0b1220]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      </div>
+    )
+  }
+
+  // Tenant suspendido o pausado: bloquear toda la app
+  if (blocked) {
+    return <TenantGateBanner title={title} body={body} />
   }
 
   return (
