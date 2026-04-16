@@ -87,24 +87,25 @@ export function SideNav({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="flex-1 overflow-auto px-3 py-3 space-y-0.5">
 
-        {/* Main items */}
+        {/* Main items — sub-items rendered inline after their parent */}
         {MAIN_NAV.map((item) => (
-          <MainLink
-            key={item.to}
-            to={item.to}
-            label={item.label}
-            icon={item.icon}
-            end={item.to === '/'}
-            onNavigate={onNavigate}
-          />
+          <React.Fragment key={item.to}>
+            <MainLink
+              to={item.to}
+              label={item.label}
+              icon={item.icon}
+              end={item.to === '/'}
+              onNavigate={onNavigate}
+            />
+            {item.to === '/attendance' && (
+              <div className="ml-3 border-l border-white/10 pl-3 pt-0.5 pb-1 space-y-0.5">
+                {ATTENDANCE_SUB.map((s) => (
+                  <SubLink key={s.to} {...s} onNavigate={onNavigate} />
+                ))}
+              </div>
+            )}
+          </React.Fragment>
         ))}
-
-        {/* Asistencia sub-items */}
-        <div className="ml-3 border-l border-white/10 pl-3 pt-0.5 pb-1 space-y-0.5">
-          {ATTENDANCE_SUB.map((s) => (
-            <SubLink key={s.to} {...s} onNavigate={onNavigate} />
-          ))}
-        </div>
 
         {/* CIRA V2.0 section */}
         <div className="pt-3">
