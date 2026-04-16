@@ -169,7 +169,7 @@ const LaborRegimeConfigPage: React.FC = () => {
           <select
             value={config.regime}
             onChange={(e) => handleChange('regime', e.target.value as LaborRegimeConfig['regime'])}
-            className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
           >
             <option value="CODIGO_TRABAJO">Código de Trabajo (Sector Privado)</option>
             <option value="LOSEP">LOSEP (Sector Público)</option>
@@ -188,7 +188,7 @@ const LaborRegimeConfigPage: React.FC = () => {
                 type="time"
                 value={config.night_start}
                 onChange={(e) => handleChange('night_start', e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
             <div>
@@ -197,7 +197,7 @@ const LaborRegimeConfigPage: React.FC = () => {
                 type="time"
                 value={config.night_end}
                 onChange={(e) => handleChange('night_end', e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
           </div>
@@ -216,7 +216,7 @@ const LaborRegimeConfigPage: React.FC = () => {
                 min={0} max={24} step={0.5}
                 value={config.max_suplem_daily_h}
                 onChange={(e) => handleChange('max_suplem_daily_h', parseFloat(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
             <div>
@@ -226,7 +226,7 @@ const LaborRegimeConfigPage: React.FC = () => {
                 min={0} max={300} step={1}
                 value={config.max_suplem_monthly_h}
                 onChange={(e) => handleChange('max_suplem_monthly_h', parseFloat(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
           </div>
@@ -245,7 +245,7 @@ const LaborRegimeConfigPage: React.FC = () => {
                 min={0} max={100} step={0.5}
                 value={config.fine_cap_pct}
                 onChange={(e) => handleChange('fine_cap_pct', parseFloat(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
             <div>
@@ -255,7 +255,7 @@ const LaborRegimeConfigPage: React.FC = () => {
                 min={1} max={31} step={1}
                 value={config.reincidence_threshold}
                 onChange={(e) => handleChange('reincidence_threshold', parseInt(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
             <div>
@@ -265,7 +265,7 @@ const LaborRegimeConfigPage: React.FC = () => {
                 min={1} max={10} step={0.1}
                 value={config.reincidence_multiplier}
                 onChange={(e) => handleChange('reincidence_multiplier', parseFloat(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
           </div>
@@ -298,7 +298,7 @@ const LaborRegimeConfigPage: React.FC = () => {
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
-                  <tr className="bg-gray-50 text-left">
+                  <tr className="bg-white/5 text-left">
                     <th className="px-4 py-2 border border-gray-200 font-medium text-gray-600">Tipo de Hora</th>
                     <th className="px-4 py-2 border border-gray-200 font-medium text-gray-600">Multiplicador</th>
                     <th className="px-4 py-2 border border-gray-200 font-medium text-gray-600">Factor HB</th>
@@ -308,7 +308,7 @@ const LaborRegimeConfigPage: React.FC = () => {
                 </thead>
                 <tbody>
                   {regimeRules.map((rule) => (
-                    <tr key={rule.id} className="hover:bg-gray-50">
+                    <tr key={rule.id} className="hover:bg-white/5">
                       <td className="px-4 py-2 border border-gray-200">
                         {HOUR_TYPE_LABELS[rule.hour_type] ?? rule.hour_type}
                       </td>
@@ -322,7 +322,7 @@ const LaborRegimeConfigPage: React.FC = () => {
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
                           rule.is_active
                             ? 'bg-green-100 text-green-700'
-                            : 'bg-gray-100 text-gray-500'
+                            : 'bg-white/10 text-gray-500'
                         }`}>
                           {rule.is_active ? 'Activo' : 'Inactivo'}
                         </span>

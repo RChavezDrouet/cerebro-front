@@ -204,7 +204,7 @@ const OvertimeRequestsPage: React.FC = () => {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 bg-white/10 rounded-lg p-1 w-fit">
         {FILTER_TABS.map(tab => (
           <button
             key={tab.value}
@@ -227,14 +227,14 @@ const OvertimeRequestsPage: React.FC = () => {
 
       {/* Table */}
       {filtered.length === 0 ? (
-        <div className="bg-gray-50 border border-gray-200 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
+        <div className="bg-white/5 border border-gray-200 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
           No hay solicitudes{filter !== 'all' ? ` con estado "${STATUS_LABELS[filter as OvertimeStatus]}"` : ''}.
         </div>
       ) : (
         <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 text-left border-b border-gray-200">
+              <tr className="bg-white/5 text-left border-b border-gray-200">
                 <th className="px-4 py-3 font-medium text-gray-600">Empleado</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Fecha</th>
                 <th className="px-4 py-3 font-medium text-gray-600 text-right">Horas</th>
@@ -249,7 +249,7 @@ const OvertimeRequestsPage: React.FC = () => {
             </thead>
             <tbody>
               {filtered.map((req) => (
-                <tr key={req.id} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr key={req.id} className="border-b border-gray-100 hover:bg-white/5">
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
                     <span className="font-mono text-xs text-gray-400">{req.employee_id.slice(0, 8)}…</span>
                   </td>
@@ -260,7 +260,7 @@ const OvertimeRequestsPage: React.FC = () => {
                     {req.hours_requested}h
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-600">
                       {HOUR_TYPE_LABELS[req.hour_type] ?? req.hour_type}
                     </span>
                   </td>
@@ -352,12 +352,12 @@ const OvertimeRequestsPage: React.FC = () => {
               onChange={(e) => setRejectModal(prev => ({ ...prev, note: e.target.value }))}
               rows={4}
               placeholder="Motivo del rechazo…"
-              className="w-full p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 focus:outline-none resize-none"
+              className="w-full p-3 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-red-500 focus:outline-none resize-none"
             />
             <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={() => setRejectModal({ open: false, requestId: '', note: '' })}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 bg-white/10 hover:bg-gray-200 transition-colors"
               >
                 Cancelar
               </button>

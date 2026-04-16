@@ -210,7 +210,7 @@ const FineConfigPage: React.FC = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 text-left border-b border-gray-200">
+              <tr className="bg-white/5 text-left border-b border-gray-200">
                 <th className="px-4 py-3 font-medium text-gray-600">Tipo de Incidencia</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Método de Cálculo</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Valor</th>
@@ -220,7 +220,7 @@ const FineConfigPage: React.FC = () => {
             </thead>
             <tbody>
               {configs.map((cfg) => (
-                <tr key={cfg.incident_type} className="border-b border-gray-100 hover:bg-gray-50">
+                <tr key={cfg.incident_type} className="border-b border-gray-100 hover:bg-white/5">
                   <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
                     {INCIDENT_TYPE_LABELS[cfg.incident_type]}
                   </td>
@@ -230,7 +230,7 @@ const FineConfigPage: React.FC = () => {
                       onChange={(e) =>
                         handleChange(cfg.incident_type, 'calc_method', e.target.value as CalcMethod)
                       }
-                      className="w-full p-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      className="w-full p-1.5 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     >
                       {(Object.entries(CALC_METHOD_LABELS) as [CalcMethod, string][]).map(([m, label]) => (
                         <option key={m} value={m}>{label}</option>
@@ -246,7 +246,7 @@ const FineConfigPage: React.FC = () => {
                       onChange={(e) =>
                         handleChange(cfg.incident_type, 'value', parseFloat(e.target.value) || 0)
                       }
-                      className="w-24 p-1.5 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      className="w-24 p-1.5 border border-gray-300 rounded-lg text-sm font-mono bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     />
                   </td>
                   <td className="px-4 py-3">
@@ -259,7 +259,7 @@ const FineConfigPage: React.FC = () => {
                       onChange={(e) =>
                         handleChange(cfg.incident_type, 'grace_minutes', parseInt(e.target.value) || 0)
                       }
-                      className="w-20 p-1.5 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      className="w-20 p-1.5 border border-gray-300 rounded-lg text-sm font-mono bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     />
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -278,7 +278,7 @@ const FineConfigPage: React.FC = () => {
           </table>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-4">
+        <div className="px-6 py-4 border-t border-gray-100 bg-white/5 flex items-center justify-between gap-4">
           <p className="text-xs text-gray-400">
             Tolerancia: minutos de gracia antes de aplicar la multa.
             Valor: USD por minuto, monto fijo, o factor sobre HB (Sueldo ÷ 240).
@@ -307,14 +307,14 @@ const FineConfigPage: React.FC = () => {
             aún no existe. Se creará en la Sesión C-4 del roadmap CIRA V2.0.
           </div>
         ) : ledger.length === 0 ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-xl px-6 py-8 text-center text-sm text-gray-400">
+          <div className="bg-white/5 border border-gray-200 rounded-xl px-6 py-8 text-center text-sm text-gray-400">
             No hay multas registradas aún.
           </div>
         ) : (
           <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-50 text-left border-b border-gray-200">
+                <tr className="bg-white/5 text-left border-b border-gray-200">
                   <th className="px-4 py-3 font-medium text-gray-600">Fecha</th>
                   <th className="px-4 py-3 font-medium text-gray-600">Empleado</th>
                   <th className="px-4 py-3 font-medium text-gray-600">Tipo</th>
@@ -326,7 +326,7 @@ const FineConfigPage: React.FC = () => {
               </thead>
               <tbody>
                 {ledger.map((entry) => (
-                  <tr key={entry.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <tr key={entry.id} className="border-b border-gray-100 hover:bg-white/5">
                     <td className="px-4 py-2 text-gray-700">{entry.incident_date}</td>
                     <td className="px-4 py-2 font-mono text-xs text-gray-400">
                       {entry.employee_id.slice(0, 8)}…
@@ -347,7 +347,7 @@ const FineConfigPage: React.FC = () => {
                           Sí +${entry.cap_excess.toFixed(2)}
                         </span>
                       ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-500">
                           No
                         </span>
                       )}
