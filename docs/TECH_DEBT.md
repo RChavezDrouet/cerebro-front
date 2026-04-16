@@ -474,6 +474,106 @@ LBPH_CONFIDENCE_SCALE = float(os.environ.get('LBPH_CONFIDENCE_SCALE', '150.0'))
 
 ---
 
+---
+
+## 🔵 CIRA V2.0 — Pendientes técnicos conocidos
+
+### CIRA-1 — Employee UUID truncado en OvertimeRequestsPage y AttendanceReportCiraPage
+
+**Archivos:**
+- `base-front/src/pages/cira/OvertimeRequestsPage.tsx` — columna "Empleado"
+- `base-front/src/pages/cira/AttendanceReportCiraPage.tsx` — función `employeeName()`
+
+**Situación actual:**
+```tsx
+// OvertimeRequestsPage — siempre muestra:
+<span className="font-mono text-xs text-gray-400">{req.employee_id.slice(0, 8)}…</span>
+
+// AttendanceReportCiraPage:
+function employeeName(row: PunchRow): string {
+  if (row.employee) return `${row.employee.first_name} ${row.employee.last_name}`
+  return `${row.employee_id.slice(0, 8)}…`
+}
+```
+
+**Por qué se hizo así:** `attendance.overtime_requests` no tiene FK definida hacia `attendance.employees` (tabla creada en sesión C-5 aún no migrada). PostgREST devuelve PGRST200 si se intenta el join sin FK.
+
+**Solución pendiente:** Crear una vista SQL `attendance.v_overtime_requests_named` que haga el JOIN explícito, o agregar la FK al ejecutar la migración C-5. `AttendanceReportCiraPage` ya intenta el join en `punches` (tiene FK real) y muestra nombre completo cuando está disponible.
+
+**Sesión CIRA que lo resuelve:** C-5 (overtime_requests migration + FK).
+
+---
+
+### CIRA-2 — AttendanceReportCiraPage Tab "Resumen del Día" — columna horas sin calcular
+
+**Archivo:** `base-front/src/pages/cira/AttendanceReportCiraPage.tsx` líneas ~195-200
+
+**Situación actual:**
+```tsx
+<td className="px-4 py-3 text-right text-gray-300 text-xs">
+  — pendiente C-3
+</td>
+```
+
+**Por qué:** La función `attendance.calculate_day_totals(tenant_id, employee_id, date)` no existe aún. Depende de `attendance.classify_work_minute()` y `attendance.labor_regime_config`.
+
+**Solución pendiente:** Sesión C-3 del roadmap CIRA V2.0. Una vez creada la función SQL, reemplazar la celda con llamada RPC y mostrar `normal_h | suplem_h | extra_h | total_usd`.
+
+---
+
+### CIRA-4 — `fine_ledger` y `overtime_requests` sin FK a `employees` — PostgREST join imposible
+
+**Tablas afectadas:**
+- `attendance.fine_ledger.employee_id` — sin `REFERENCES attendance.employees(id)`
+- `attendance.overtime_requests.employee_id` — sin `REFERENCES attendance.employees(id)`
+
+**Síntoma en el frontend:**
+```
+PGRST200: Could not find a relationship between 'fine_ledger' and 'employees'
+```
+Ambas tablas son del roadmap CIRA V2.0 (C-4 y C-5) y fueron diseñadas con `employee_id uuid NOT NULL` pero sin la clave foránea explícita. PostgREST requiere FK declarada para resolver joins automáticos vía `select('employee:employees(first_name, last_name)')`.
+
+**Incompatibilidad con RLS:**
+Aunque se creara una vista SQL (`CREATE VIEW v_fine_ledger_named AS SELECT … JOIN employees …`), la vista hereda la RLS de `fine_ledger` pero no la de `employees`. Si las políticas de `employees` filtran por `tenant_id` de forma diferente, el join puede devolver filas vacías o lanzar un error de permisos dependiendo del `security_invoker` de la vista.
+
+**Impacto actual:**
+- `FineConfigPage` — historial de multas muestra `employee_id.slice(0,8)…` (UUID truncado).
+- `OvertimeRequestsPage` — columna Empleado muestra UUID truncado (ver CIRA-1).
+- `AttendanceReportCiraPage` tab Multas — ídem UUID truncado cuando `fine_ledger` exista.
+
+**Solución recomendada al ejecutar migraciones C-4 y C-5:**
+```sql
+-- En la migración C-4 (fine_ledger):
+ALTER TABLE attendance.fine_ledger
+  ADD CONSTRAINT fine_ledger_employee_id_fk
+  FOREIGN KEY (employee_id) REFERENCES attendance.employees(id) ON DELETE RESTRICT;
+
+-- En la migración C-5 (overtime_requests):
+ALTER TABLE attendance.overtime_requests
+  ADD CONSTRAINT overtime_requests_employee_id_fk
+  FOREIGN KEY (employee_id) REFERENCES attendance.employees(id) ON DELETE RESTRICT;
+```
+Con las FK declaradas, el join PostgREST funcionará sin cambios en el frontend.
+
+---
+
+### CIRA-3 — Migración 010_cira_labor_regime.sql pendiente de ejecutar en producción
+
+**Archivo:** `supabase/sql_attendance_isolated/010_cira_labor_regime.sql`
+
+**Situación actual:** El archivo SQL está completo (237 líneas) — tablas `labor_regime_config`, `surcharge_rules`, RLS, grants, función `seed_cira_defaults()`. **No ha sido ejecutado** contra la base de datos de producción.
+
+**Acción requerida:**
+1. Abrir Supabase Dashboard → SQL Editor.
+2. Pegar el contenido de `010_cira_labor_regime.sql` y ejecutar.
+3. Ejecutar seed: `select attendance.seed_cira_defaults('4bddfca3-04b4-47f0-bff6-3e3145ec095c');`
+4. Verificar: `select * from attendance.labor_regime_config;` → debe devolver 1 fila.
+5. Verificar: `select count(*) from attendance.surcharge_rules;` → debe devolver 12 filas (6 por régimen).
+
+**Impacto de no ejecutar:** `LaborRegimeConfigPage` muestra spinner infinito o error al cargar. `FineConfigPage` carga los DEFAULT_CONFIGS del frontend pero no persiste hasta que las tablas existan.
+
+---
+
 ## Resumen Ejecutivo
 
 | Categoría | Alta | Media | Baja |

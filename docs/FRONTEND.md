@@ -358,6 +358,10 @@ All authenticated routes are nested under `<AppShell>` (wrapped in `<RequireAuth
 | `/config/seguridad` | `SecurityConfigPage` | Security settings (geofence, photo requirements) |
 | `/config/correo` | `EmailConfigPage` | SMTP email config per tenant |
 | `/config/reportes` | `ReportsConfigPage` | Report format and column preferences |
+| `/config/cira/regimen-laboral` | `LaborRegimeConfigPage` | CIRA V2.0 — régimen laboral (CODIGO_TRABAJO / LOSEP) y reglas de recargo |
+| `/config/cira/multas` | `FineConfigPage` | CIRA V2.0 — configuración de multas por tipo de incidencia + historial fine_ledger |
+| `/config/cira/horas-extra` | `OvertimeRequestsPage` | CIRA V2.0 — solicitudes de horas extra: aprobar / rechazar / compensar |
+| `/reports/cira` | `AttendanceReportCiraPage` | CIRA V2.0 — reporte FR-09: resumen del día, multas, acumulados legales (3 tabs) |
 
 **Redirects:**
 - `/attendance/detail` → `/attendance/daily`
@@ -478,6 +482,12 @@ interface TenantState {
 | `settings` | attendance | SELECT, UPSERT | CompanyConfigPage, various config pages |
 | `kpi_settings` | attendance | SELECT, UPSERT | DashboardPage, KpiConfigPage |
 | `holidays` | attendance | SELECT, INSERT, UPDATE, DELETE | HolidaysPage |
+| `labor_regime_config` | attendance | SELECT, UPSERT | LaborRegimeConfigPage |
+| `surcharge_rules` | attendance | SELECT | LaborRegimeConfigPage |
+| `fine_config` | attendance | SELECT, UPSERT | FineConfigPage |
+| `fine_ledger` | attendance | SELECT | FineConfigPage, AttendanceReportCiraPage (tablePending hasta C-4) |
+| `overtime_requests` | attendance | SELECT, UPDATE | OvertimeRequestsPage (tablePending hasta C-5 ejecutado) |
+| `overtime_ledger` | attendance | SELECT | AttendanceReportCiraPage (tablePending hasta C-7) |
 
 **RPCs called from base-front:**
 
