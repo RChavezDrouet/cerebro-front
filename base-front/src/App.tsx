@@ -35,6 +35,7 @@ import TurnsPage from '@/pages/config/TurnsPage'
 import TurnosHorariosPage from '@/pages/config/TurnosHorariosPage'
 import OrgStructurePage from '@/pages/config/OrgStructurePage'
 import MarcacionConfigPage from '@/pages/config/MarcacionConfigPage'
+import LaborRegimeConfigPage from './pages/cira/LaborRegimeConfigPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { loading, session } = useAuth()
@@ -93,6 +94,7 @@ export default function App() {
           <Route path="/config/organizacional" element={<OrgStructurePage />} />
           <Route path="/config/organigrama" element={<Navigate to="/config/organizacional" replace />} />
           <Route path="/config/estructura-organizacional" element={<Navigate to="/config/organizacional" replace />} />
+          <Route path="/config/cira/regimen-laboral" element={<LaborRegimeConfigPage />} />
           <Route path="/config/roles-permisos" element={<RolesPermissionsPage />} />
           <Route path="/config/feriados" element={<HolidaysPage />} />
           <Route path="/config/holidays" element={<Navigate to="/config/feriados" replace />} />
