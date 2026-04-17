@@ -100,8 +100,18 @@ const MARKING_LABELS: Record<string, string> = {
   '1': 'Salida',  '2': 'Salida',  '5': 'HE Salida',
   ENTRADA: 'Entrada', SALIDA: 'Salida', IN: 'Entrada', OUT: 'Salida',
 }
-const SOURCE_LABELS: Record<string, string> = {
-  biometric: 'Biométrico', web: 'PWA', import: 'Importado',
+function sourceLabel(p: Punch): string {
+  const s = p.source ?? ''
+  if (s === 'web' || s === 'pwa') return 'Web / PWA'
+  if (s === 'import') return 'Importado'
+  if (s === 'biometric') {
+    const vt = String(p.meta?.['verify_type'] ?? '')
+    if (vt === '15') return 'Biométrico / Facial'
+    if (vt === '1')  return 'Biométrico / Huella'
+    if (vt === '3')  return 'Biométrico / Código'
+    return 'Biométrico'
+  }
+  return s || '—'
 }
 const OT_STATUS_LABELS: Record<string, string> = {
   pending: 'Pendiente', approved: 'Aprobado',
@@ -664,7 +674,7 @@ const ReportesPage: React.FC = () => {
         p.employee ? `${p.employee.last_name}, ${p.employee.first_name}` : p.employee_id.slice(0,8),
         p.employee?.employee_code ?? '',
         MARKING_LABELS[metaType(p)] ?? (metaType(p) || '—'),
-        SOURCE_LABELS[p.source] ?? p.source,
+        sourceLabel(p),
       ]),
     ]
     const csv  = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')
@@ -815,7 +825,7 @@ const ReportesPage: React.FC = () => {
                               {mtLabel}
                             </span>
                           </td>
-                          <td className="px-4 py-2 text-xs text-white/50">{SOURCE_LABELS[p.source] ?? p.source}</td>
+                          <td className="px-4 py-2 text-xs text-white/50">{sourceLabel(p)}</td>
                         </tr>
                       )
                     })}
