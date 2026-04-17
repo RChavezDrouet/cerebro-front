@@ -42,6 +42,9 @@ import AttendanceReportCiraPage from './pages/cira/AttendanceReportCiraPage'
 import JornadasConfigPage from './pages/cira/JornadasConfigPage'
 import JornadaAsignacionPage from './pages/cira/JornadaAsignacionPage'
 import ReportesPage from './pages/reports/ReportesPage'
+import PayrollHomePage from './pages/payroll/PayrollHomePage'
+import PayrollPeriodsPage from './pages/payroll/PayrollPeriodsPage'
+import PayrollRunsPage from './pages/payroll/PayrollRunsPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { loading, session } = useAuth()
@@ -121,6 +124,10 @@ export default function App() {
           <Route path="/config/seguridad" element={<SecurityConfigPage />} />
           <Route path="/config/correo" element={<EmailConfigPage />} />
           <Route path="/config/reportes" element={<ReportsConfigPage />} />
+
+          <Route path="/payroll" element={<PayrollHomePage />} />
+          <Route path="/payroll/periods" element={<PayrollPeriodsPage />} />
+          <Route path="/payroll/runs" element={<PayrollRunsPage />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

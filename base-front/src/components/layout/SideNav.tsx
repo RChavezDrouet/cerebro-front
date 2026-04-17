@@ -1,7 +1,7 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Users, Settings, BarChart2,
+  LayoutDashboard, Users, Settings, BarChart2, Banknote,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -14,6 +14,7 @@ const MAIN_NAV = [
   { to: '/',          label: 'Dashboard',     icon: <LayoutDashboard size={18} /> },
   { to: '/employees', label: 'Empleados',     icon: <Users           size={18} /> },
   { to: '/reports',   label: 'Reportes',      icon: <BarChart2       size={18} /> },
+  { to: '/payroll',   label: 'Nómina',        icon: <Banknote        size={18} /> },
   { to: '/config',    label: 'Configuración', icon: <Settings        size={18} /> },
 ]
 
@@ -21,6 +22,11 @@ const REPORTS_SUB: SubItem[] = [
   { to: '/reports/marcaciones', label: 'Marcaciones'     },
   { to: '/reports/asistencia',  label: 'Resumen Mensual' },
   { to: '/reports/cira',        label: 'Reporte CIRA'    },
+]
+
+const PAYROLL_SUB: SubItem[] = [
+  { to: '/payroll/periods', label: 'Períodos'   },
+  { to: '/payroll/runs',    label: 'Ejecuciones' },
 ]
 
 // CIRA V2.0 items live under Configuración
@@ -101,6 +107,15 @@ export function SideNav({ onNavigate }: { onNavigate?: () => void }) {
             {item.to === '/reports' && (
               <div className="ml-3 border-l border-white/10 pl-3 pt-0.5 pb-1 space-y-0.5">
                 {REPORTS_SUB.map((s) => (
+                  <SubLink key={s.to} {...s} onNavigate={onNavigate} />
+                ))}
+              </div>
+            )}
+
+            {/* Nómina sub-items */}
+            {item.to === '/payroll' && (
+              <div className="ml-3 border-l border-white/10 pl-3 pt-0.5 pb-1 space-y-0.5">
+                {PAYROLL_SUB.map((s) => (
                   <SubLink key={s.to} {...s} onNavigate={onNavigate} />
                 ))}
               </div>
