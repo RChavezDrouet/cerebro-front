@@ -41,6 +41,7 @@ import OvertimeRequestsPage from './pages/cira/OvertimeRequestsPage'
 import AttendanceReportCiraPage from './pages/cira/AttendanceReportCiraPage'
 import JornadasConfigPage from './pages/cira/JornadasConfigPage'
 import JornadaAsignacionPage from './pages/cira/JornadaAsignacionPage'
+import ReportesPage from './pages/reports/ReportesPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { loading, session } = useAuth()
@@ -84,8 +85,16 @@ export default function App() {
           <Route path="/attendance/usb-import" element={<UsbImportPage />} />
           <Route path="/attendance/detail" element={<Navigate to="/attendance/daily" replace />} />
 
+          <Route path="/reports" element={<Navigate to="/reports/marcaciones" replace />} />
+          <Route path="/reports/marcaciones" element={<ReportesPage />} />
+          <Route path="/reports/asistencia" element={<ReportesPage />} />
+          <Route path="/reports/horas-extra" element={<ReportesPage />} />
+          <Route path="/reports/vacaciones" element={<ReportesPage />} />
+          <Route path="/reports/ranking" element={<ReportesPage />} />
+          <Route path="/reports/novedades" element={<ReportesPage />} />
+          <Route path="/reports/multas" element={<ReportesPage />} />
           <Route path="/reports/diario" element={<DailyAttendanceReportPage />} />
-          <Route path="/reports/detailed" element={<Navigate to="/attendance/daily" replace />} />
+          <Route path="/reports/detailed" element={<Navigate to="/reports/marcaciones" replace />} />
 
           <Route path="/config" element={<ConfigHomePage />} />
           <Route path="/config/company" element={<CompanyConfigPage />} />

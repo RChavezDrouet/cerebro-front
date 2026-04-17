@@ -1,8 +1,7 @@
 import React from 'react'
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Users, CalendarDays, Settings,
-  UploadCloud, Scale, Receipt, Clock, BarChart2,
+  LayoutDashboard, Users, Settings, BarChart2,
 } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -12,16 +11,15 @@ type SubItem = { to: string; label: string }
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
 const MAIN_NAV = [
-  { to: '/',           label: 'Dashboard',     icon: <LayoutDashboard size={18} /> },
-  { to: '/employees',  label: 'Empleados',     icon: <Users           size={18} /> },
-  { to: '/attendance', label: 'Asistencia',    icon: <CalendarDays    size={18} /> },
-  { to: '/config',     label: 'Configuración', icon: <Settings        size={18} /> },
+  { to: '/',          label: 'Dashboard',     icon: <LayoutDashboard size={18} /> },
+  { to: '/employees', label: 'Empleados',     icon: <Users           size={18} /> },
+  { to: '/reports',   label: 'Reportes',      icon: <BarChart2       size={18} /> },
+  { to: '/config',    label: 'Configuración', icon: <Settings        size={18} /> },
 ]
 
-const ATTENDANCE_SUB: SubItem[] = [
-  { to: '/attendance/daily',      label: 'Reporte diario'  },
-  { to: '/attendance/novelties',  label: 'Novedades'       },
-  { to: '/attendance/usb-import', label: 'Importación USB' },
+const REPORTS_SUB: SubItem[] = [
+  { to: '/reports/marcaciones', label: 'Marcaciones'    },
+  { to: '/reports/asistencia',  label: 'Resumen Mensual' },
 ]
 
 const CIRA_ITEMS: SubItem[] = [
@@ -99,9 +97,9 @@ export function SideNav({ onNavigate }: { onNavigate?: () => void }) {
               end={item.to === '/'}
               onNavigate={onNavigate}
             />
-            {item.to === '/attendance' && (
+            {item.to === '/reports' && (
               <div className="ml-3 border-l border-white/10 pl-3 pt-0.5 pb-1 space-y-0.5">
-                {ATTENDANCE_SUB.map((s) => (
+                {REPORTS_SUB.map((s) => (
                   <SubLink key={s.to} {...s} onNavigate={onNavigate} />
                 ))}
               </div>

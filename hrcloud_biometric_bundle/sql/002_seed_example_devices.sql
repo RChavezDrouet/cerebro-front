@@ -1,0 +1,17 @@
+-- Semilla de ejemplo
+-- Reemplazar los UUID antes de ejecutar
+
+-- update attendance.biometric_devices
+-- set alias = 'Recepcion Matriz',
+--     vendor = 'ZKTeco',
+--     model = 'uFace 302',
+--     firmware_version = 'demo',
+--     connection_mode = 'adms_push',
+--     supports_fingerprint = true,
+--     supports_face = true,
+--     supports_pin = true,
+--     supports_user_pull = false,
+--     supports_user_push = false,
+--     supports_delete = false,
+--     supports_mass_import = true
+-- where id = 'REEMPLAZAR_DEVICE_UUID';

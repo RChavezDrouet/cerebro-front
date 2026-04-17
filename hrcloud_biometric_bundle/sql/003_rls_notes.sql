@@ -1,0 +1,6 @@
+-- Notas de RLS
+-- Este bundle NO impone políticas automáticas porque depende de tu diseño actual de helpers y roles.
+-- Recomendación:
+-- 1) Exponer estas tablas solo a backend/service_role al inicio.
+-- 2) Cuando Base use backend propio, no consultar estas tablas directo desde el frontend.
+-- 3) Si luego expones lectura al frontend, crear vistas filtradas por tenant y funciones helper.
