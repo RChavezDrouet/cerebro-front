@@ -29,6 +29,7 @@ const CIRA_ITEMS: SubItem[] = [
   { to: '/config/cira/multas',          label: 'Multas'          },
   { to: '/config/cira/horas-extra',     label: 'Horas Extra'     },
   { to: '/config/jornadas',             label: 'Jornadas'        },
+  { to: '/config/jornadas/asignacion',  label: 'Asignación'      },
   { to: '/reports/cira',                label: 'Reporte CIRA'    },
 ]
 

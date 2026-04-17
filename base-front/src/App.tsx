@@ -40,6 +40,7 @@ import FineConfigPage from './pages/cira/FineConfigPage'
 import OvertimeRequestsPage from './pages/cira/OvertimeRequestsPage'
 import AttendanceReportCiraPage from './pages/cira/AttendanceReportCiraPage'
 import JornadasConfigPage from './pages/cira/JornadasConfigPage'
+import JornadaAsignacionPage from './pages/cira/JornadaAsignacionPage'
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { loading, session } = useAuth()
@@ -103,6 +104,7 @@ export default function App() {
           <Route path="/config/cira/horas-extra" element={<OvertimeRequestsPage />} />
           <Route path="/reports/cira" element={<AttendanceReportCiraPage />} />
           <Route path="/config/jornadas" element={<JornadasConfigPage />} />
+          <Route path="/config/jornadas/asignacion" element={<JornadaAsignacionPage />} />
           <Route path="/config/roles-permisos" element={<RolesPermissionsPage />} />
           <Route path="/config/feriados" element={<HolidaysPage />} />
           <Route path="/config/holidays" element={<Navigate to="/config/feriados" replace />} />
