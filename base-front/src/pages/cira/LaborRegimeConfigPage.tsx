@@ -159,11 +159,11 @@ const LaborRegimeConfigPage: React.FC = () => {
       {/* Formulario */}
       <form
         onSubmit={(e) => { e.preventDefault(); handleSave(); }}
-        className="bg-white rounded-xl border border-gray-200 p-6 space-y-5"
+        className="bg-white/5 rounded-xl border border-white/10 p-6 space-y-5"
       >
         {/* Régimen */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
+          <label className="block text-sm font-medium text-gray-300 mb-1">
             Régimen Laboral
           </label>
           <select
@@ -178,7 +178,7 @@ const LaborRegimeConfigPage: React.FC = () => {
 
         {/* Franja nocturna */}
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-2">
+          <p className="text-sm font-medium text-gray-300 mb-2">
             Franja Horaria Nocturna
           </p>
           <div className="grid grid-cols-2 gap-4">
@@ -205,7 +205,7 @@ const LaborRegimeConfigPage: React.FC = () => {
 
         {/* Límites suplementarias */}
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-2">
+          <p className="text-sm font-medium text-gray-300 mb-2">
             Límites de Horas Suplementarias
           </p>
           <div className="grid grid-cols-2 gap-4">
@@ -234,7 +234,7 @@ const LaborRegimeConfigPage: React.FC = () => {
 
         {/* Multas */}
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-2">
+          <p className="text-sm font-medium text-gray-300 mb-2">
             Política de Multas
           </p>
           <div className="grid grid-cols-3 gap-4">

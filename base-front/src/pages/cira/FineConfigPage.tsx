@@ -202,7 +202,7 @@ const FineConfigPage: React.FC = () => {
       </div>
 
       {/* Tabla de configuración CRUD */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100">
           <h2 className="text-base font-semibold text-gray-800">Reglas de Multa por Incidencia</h2>
         </div>
@@ -311,7 +311,7 @@ const FineConfigPage: React.FC = () => {
             No hay multas registradas aún.
           </div>
         ) : (
-          <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
+          <div className="overflow-x-auto bg-white/5 rounded-xl border border-white/10">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-white/5 text-left border-b border-gray-200">

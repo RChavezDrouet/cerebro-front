@@ -231,7 +231,7 @@ const OvertimeRequestsPage: React.FC = () => {
           No hay solicitudes{filter !== 'all' ? ` con estado "${STATUS_LABELS[filter as OvertimeStatus]}"` : ''}.
         </div>
       ) : (
-        <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
+        <div className="overflow-x-auto bg-white/5 rounded-xl border border-white/10">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-white/5 text-left border-b border-gray-200">
@@ -340,7 +340,7 @@ const OvertimeRequestsPage: React.FC = () => {
           onClick={() => setRejectModal({ open: false, requestId: '', note: '' })}
         >
           <div
-            className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4"
+            className="bg-[#0f1a2e] rounded-xl shadow-xl border border-white/10 p-6 w-full max-w-md mx-4"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold text-gray-900 mb-1">Rechazar solicitud</h3>
@@ -357,7 +357,7 @@ const OvertimeRequestsPage: React.FC = () => {
             <div className="flex justify-end gap-3 mt-4">
               <button
                 onClick={() => setRejectModal({ open: false, requestId: '', note: '' })}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 bg-white/10 hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 bg-white/10 hover:bg-white/20 transition-colors"
               >
                 Cancelar
               </button>
