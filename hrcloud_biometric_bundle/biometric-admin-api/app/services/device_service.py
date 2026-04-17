@@ -8,8 +8,11 @@ class DeviceService:
     def __init__(self) -> None:
         self.provider = ZKTecoProvider()
 
-    async def list_devices(self, tenant_id: str) -> list[dict]:
-        return await device_repository.list_by_tenant(tenant_id)
+    async def list_devices(self, tenant_id: str, include_inactive: bool = False) -> list[dict]:
+        return await device_repository.list_by_tenant(
+            tenant_id=tenant_id,
+            include_inactive=include_inactive,
+        )
 
     async def get_device_or_raise(self, device_id: str) -> dict:
         device = await device_repository.get_by_id(device_id)

@@ -23,22 +23,53 @@ class SupabaseRestClient:
             "Prefer": "return=representation",
         }
 
+    def _url(self, path: str) -> str:
+        return f"{self.base_url}/rest/v1/{path}"
+
+    def _raise_with_detail(self, method: str, path: str, response: httpx.Response) -> None:
+        body = response.text
+        raise Exception(
+            f"Supabase {method} error | "
+            f"status={response.status_code} | "
+            f"path={path} | "
+            f"schema={self.schema} | "
+            f"body={body}"
+        )
+
     async def get(self, path: str, params: dict | None = None) -> list[dict]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(f"{self.base_url}/rest/v1/{path}", headers=self.headers(), params=params)
-            response.raise_for_status()
+            response = await client.get(
+                self._url(path),
+                headers=self.headers(),
+                params=params,
+            )
+            if response.status_code >= 400:
+                self._raise_with_detail("GET", path, response)
             return response.json()
 
     async def post(self, path: str, payload: dict | list[dict]) -> list[dict]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(f"{self.base_url}/rest/v1/{path}", headers=self.headers(), json=payload)
-            response.raise_for_status()
-            return response.json()
+            response = await client.post(
+                self._url(path),
+                headers=self.headers(),
+                json=payload,
+            )
+            if response.status_code >= 400:
+                self._raise_with_detail("POST", path, response)
+            if response.text.strip():
+                return response.json()
+            return []
 
     async def patch(self, path: str, payload: dict, params: dict | None = None) -> list[dict]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.patch(f"{self.base_url}/rest/v1/{path}", headers=self.headers(), json=payload, params=params)
-            response.raise_for_status()
+            response = await client.patch(
+                self._url(path),
+                headers=self.headers(),
+                json=payload,
+                params=params,
+            )
+            if response.status_code >= 400:
+                self._raise_with_detail("PATCH", path, response)
             if response.text.strip():
                 return response.json()
             return []

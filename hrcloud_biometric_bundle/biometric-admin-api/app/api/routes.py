@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas.job import PullUsersRequest, ReconciliationRequest, TransferRequest
 from app.services.device_service import device_service
@@ -16,8 +16,14 @@ def docs_notes() -> dict:
 
 
 @router.get("/biometric/devices")
-async def list_devices(tenant_id: str):
-    return await device_service.list_devices(tenant_id)
+async def list_devices(
+    tenant_id: str = Query(...),
+    include_inactive: bool = Query(False),
+):
+    return await device_service.list_devices(
+        tenant_id=tenant_id,
+        include_inactive=include_inactive,
+    )
 
 
 @router.get("/biometric/devices/{device_id}/health")
