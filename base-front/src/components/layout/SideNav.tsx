@@ -28,6 +28,7 @@ const CIRA_ITEMS: SubItem[] = [
   { to: '/config/cira/regimen-laboral', label: 'Régimen Laboral' },
   { to: '/config/cira/multas',          label: 'Multas'          },
   { to: '/config/cira/horas-extra',     label: 'Horas Extra'     },
+  { to: '/config/jornadas',             label: 'Jornadas'        },
   { to: '/reports/cira',                label: 'Reporte CIRA'    },
 ]
 
