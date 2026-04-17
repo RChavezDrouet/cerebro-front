@@ -27,11 +27,14 @@ type Punch = {
 }
 
 type EmpSummary = {
-  employee:      Employee
-  days_present:  number
-  total_punches: number
-  late_days:     number
-  avg_in_time:   string | null
+  employee:          Employee
+  days_present:      number
+  total_punches:     number
+  late_days:         number   // count of late days (used by Tab 4 ranking)
+  late_min:          number   // total minutes late across all days
+  early_exits_days:  number   // days where last exit < 17:00
+  early_exits_min:   number   // total minutes early across those days
+  total_hours_min:   number   // sum of (exit - entry) per day where both exist
 }
 
 type OvertimeRequest = {
@@ -172,6 +175,10 @@ function empCode(employees: Employee[], id: string) {
 }
 function initials(emp: Employee) {
   return (emp.first_name[0] ?? '') + (emp.last_name[0] ?? '')
+}
+function fmtHoursMin(mins: number): string {
+  if (mins <= 0) return '—'
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`
 }
 /** Extracts the marking type string from punch.meta->>'type' */
 function metaType(p: Punch): string {
@@ -488,6 +495,13 @@ const ReportesPage: React.FC = () => {
 
   // Summary per employee — puntual if entry ≤ 08:10 (490 min)
   const empSummaries = useMemo((): EmpSummary[] => {
+    // meta->>'type' values observed in production: 'in'/'out' (lowercase)
+    // plus legacy numeric/uppercase variants
+    const ENTRY_TYPES = ['in','0','3','4','ENTRADA','IN']
+    const EXIT_TYPES  = ['out','1','2','5','SALIDA','OUT']
+    const LATE_THRESHOLD  = 490   // 08:10 in minutes
+    const EARLY_THRESHOLD = 1020  // 17:00 in minutes
+
     const byEmp = new Map<string, Punch[]>()
     for (const p of monthPunches) {
       const arr = byEmp.get(p.employee_id) ?? []; arr.push(p)
@@ -495,31 +509,69 @@ const ReportesPage: React.FC = () => {
     }
     const result: EmpSummary[] = []
     for (const [empId, emP] of byEmp) {
+      // Orphan fallback — no match in employees_legacy
       const emp = employees.find(e => e.id === empId) ??
-        { id: empId, employee_code: '?', first_name: '?', last_name: '?' }
+        { id: empId, employee_code: '—', first_name: 'Sin identificar', last_name: '' }
+
+      // Group punches by local date (UTC punched_at shifted -5h to Ecuador time)
       const byDate = new Map<string, Punch[]>()
       for (const p of emP) {
-        const d = p.punched_at.slice(0, 10)
-        const arr = byDate.get(d) ?? []; arr.push(p); byDate.set(d, arr)
+        const localDate = new Date(new Date(p.punched_at).getTime() - 5 * 3600000)
+          .toISOString().slice(0, 10)
+        const arr = byDate.get(localDate) ?? []; arr.push(p); byDate.set(localDate, arr)
       }
-      let late_days = 0; const in_times: number[] = []
+
+      let late_days        = 0
+      let late_min         = 0
+      let early_exits_days = 0
+      let early_exits_min  = 0
+      let total_hours_min  = 0
+
       for (const [, dPs] of byDate) {
+        // First entry of the day (sorted ascending)
         const entries = dPs
-          .filter(p => ['0','3','4','ENTRADA','IN'].includes(metaType(p)))
+          .filter(p => ENTRY_TYPES.includes(metaType(p)))
           .sort((a, b) => a.punched_at.localeCompare(b.punched_at))
+        // Last exit of the day (sorted descending → exits[0] = latest)
+        const exits = dPs
+          .filter(p => EXIT_TYPES.includes(metaType(p)))
+          .sort((a, b) => b.punched_at.localeCompare(a.punched_at))
+
         if (entries.length > 0) {
-          const t    = new Date(entries[0].punched_at)
-          const mins = t.getHours() * 60 + t.getMinutes()
-          in_times.push(mins)
-          if (mins > 490) late_days++  // > 08:10 = tardío
+          const tIn    = new Date(new Date(entries[0].punched_at).getTime() - 5 * 3600000)
+          const minsIn = tIn.getUTCHours() * 60 + tIn.getUTCMinutes()
+          if (minsIn > LATE_THRESHOLD) {
+            late_days++
+            late_min += minsIn - LATE_THRESHOLD
+          }
+        }
+
+        if (entries.length > 0 && exits.length > 0) {
+          const tIn   = new Date(entries[0].punched_at)
+          const tOut  = new Date(exits[0].punched_at)
+          const diff  = Math.round((tOut.getTime() - tIn.getTime()) / 60000)
+          if (diff > 0) total_hours_min += diff
+
+          // Early exit: last exit before 17:00 Ecuador time
+          const tOutLocal = new Date(tOut.getTime() - 5 * 3600000)
+          const minsOut   = tOutLocal.getUTCHours() * 60 + tOutLocal.getUTCMinutes()
+          if (minsOut < EARLY_THRESHOLD) {
+            early_exits_days++
+            early_exits_min += EARLY_THRESHOLD - minsOut
+          }
         }
       }
-      const avg_in_time = in_times.length > 0 ? (() => {
-        const avg = Math.round(in_times.reduce((a, b) => a + b, 0) / in_times.length)
-        return `${String(Math.floor(avg/60)).padStart(2,'0')}:${String(avg%60).padStart(2,'0')}`
-      })() : null
-      result.push({ employee: emp, days_present: byDate.size,
-        total_punches: emP.length, late_days, avg_in_time })
+
+      result.push({
+        employee: emp,
+        days_present:    byDate.size,
+        total_punches:   emP.length,
+        late_days,
+        late_min,
+        early_exits_days,
+        early_exits_min,
+        total_hours_min,
+      })
     }
     return result.sort((a, b) =>
       `${a.employee.last_name}${a.employee.first_name}`
@@ -851,7 +903,7 @@ const ReportesPage: React.FC = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-white/5 border-b border-white/10 text-left">
-                    {['Empleado','Código','Días presentes','Total marcaciones','Días tardíos','H. entrada prom.'].map(h => (
+                    {['Empleado','Código','Días presentes','Total marcaciones','Atrasos','Salidas anticipadas','Total horas trab.'].map(h => (
                       <th key={h} className="px-4 py-3 font-medium text-white/60">{h}</th>
                     ))}
                   </tr>
@@ -860,7 +912,9 @@ const ReportesPage: React.FC = () => {
                   {empSummaries.map(s => (
                     <tr key={s.employee.id} className="border-b border-white/5 hover:bg-white/5">
                       <td className="px-4 py-3 text-white font-medium whitespace-nowrap">
-                        {s.employee.last_name}, {s.employee.first_name}
+                        {s.employee.last_name
+                          ? `${s.employee.last_name}, ${s.employee.first_name}`
+                          : <span className="text-white/40 italic">{s.employee.first_name}</span>}
                       </td>
                       <td className="px-4 py-3 font-mono text-xs text-white/50">{s.employee.employee_code}</td>
                       <td className="px-4 py-3 text-center">
@@ -869,12 +923,19 @@ const ReportesPage: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center text-white/70">{s.total_punches}</td>
-                      <td className="px-4 py-3 text-center">
-                        {s.late_days > 0
-                          ? <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-400">{s.late_days}</span>
-                          : <span className="text-green-400/70 text-xs font-bold">✓</span>}
+                      <td className="px-4 py-3 text-center font-mono text-xs">
+                        {s.late_min > 0
+                          ? <span className="text-amber-400">{s.late_min} min</span>
+                          : <span className="text-white/30">0 min</span>}
                       </td>
-                      <td className="px-4 py-3 text-center font-mono text-sm text-white/70">{s.avg_in_time ?? '—'}</td>
+                      <td className="px-4 py-3 text-center font-mono text-xs whitespace-nowrap">
+                        {s.early_exits_days > 0
+                          ? <span className="text-orange-400">{s.early_exits_days} día{s.early_exits_days !== 1 ? 's' : ''} · {s.early_exits_min} min</span>
+                          : <span className="text-white/30">0</span>}
+                      </td>
+                      <td className="px-4 py-3 text-center font-mono text-sm text-white/70">
+                        {fmtHoursMin(s.total_hours_min)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -890,9 +951,14 @@ const ReportesPage: React.FC = () => {
                       {empSummaries.reduce((a, s) => a + s.total_punches, 0)}
                     </td>
                     <td className="px-4 py-2 text-center font-mono text-xs text-amber-400/70">
-                      {empSummaries.reduce((a, s) => a + s.late_days, 0)}
+                      {empSummaries.reduce((a, s) => a + s.late_min, 0)} min
                     </td>
-                    <td />
+                    <td className="px-4 py-2 text-center font-mono text-xs text-orange-400/70 whitespace-nowrap">
+                      {empSummaries.reduce((a, s) => a + s.early_exits_min, 0)} min
+                    </td>
+                    <td className="px-4 py-2 text-center font-mono text-xs text-white/60">
+                      {fmtHoursMin(empSummaries.reduce((a, s) => a + s.total_hours_min, 0))}
+                    </td>
                   </tr>
                 </tfoot>
               </table>
