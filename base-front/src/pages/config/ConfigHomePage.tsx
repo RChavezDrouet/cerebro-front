@@ -9,12 +9,12 @@ import {
   ChevronRight,
   Cpu,
   Mail,
-  FileText,
-  BarChart3,
   CalendarDays,
-  Network,
   KeyRound,
   GitBranch,
+  Scale,
+  DollarSign,
+  Timer,
 } from 'lucide-react'
 
 interface ConfigItem {
@@ -27,7 +27,9 @@ interface ConfigItem {
   textColor: string
 }
 
-const configItems: ConfigItem[] = [
+// ─── Configuración general ────────────────────────────────────────────────────
+
+const generalItems: ConfigItem[] = [
   {
     icon: <GitBranch className="w-6 h-6" />,
     title: 'Organigrama / Estructura organizacional',
@@ -70,22 +72,6 @@ const configItems: ConfigItem[] = [
     textColor: 'text-cyan-600',
   },
   {
-    icon: <Clock className="w-6 h-6" />,
-    title: 'Horarios',
-    description: 'Define los horarios de trabajo aplicables a los empleados.',
-    path: '/config/horarios',
-    color: 'bg-amber-50 border-amber-200',
-    textColor: 'text-amber-600',
-  },
-  {
-    icon: <CalendarDays className="w-6 h-6" />,
-    title: 'Turnos',
-    description: 'Administra turnos de trabajo y su configuración general.',
-    path: '/config/turnos',
-    color: 'bg-orange-50 border-orange-200',
-    textColor: 'text-orange-600',
-  },
-  {
     icon: <KeyRound className="w-6 h-6" />,
     title: 'Roles y Permisos',
     description: 'Define accesos por rol para módulos y funcionalidades.',
@@ -100,14 +86,6 @@ const configItems: ConfigItem[] = [
     path: '/config/feriados',
     color: 'bg-lime-50 border-lime-200',
     textColor: 'text-lime-600',
-  },
-  {
-    icon: <BarChart3 className="w-6 h-6" />,
-    title: 'KPIs',
-    description: 'Parametriza widgets, ranking y tipo de gráfica del dashboard.',
-    path: '/config/kpis',
-    color: 'bg-teal-50 border-teal-200',
-    textColor: 'text-teal-600',
   },
   {
     icon: <Shield className="w-6 h-6" />,
@@ -125,50 +103,100 @@ const configItems: ConfigItem[] = [
     color: 'bg-sky-50 border-sky-200',
     textColor: 'text-sky-600',
   },
+]
+
+// ─── CIRA V2.0 ────────────────────────────────────────────────────────────────
+
+const ciraItems: ConfigItem[] = [
   {
-    icon: <FileText className="w-6 h-6" />,
-    title: 'Reportes',
-    description: 'Selecciona columnas y comportamiento de reportes de asistencia.',
-    path: '/config/reportes',
-    color: 'bg-emerald-50 border-emerald-200',
-    textColor: 'text-emerald-600',
+    icon: <Scale className="w-6 h-6" />,
+    title: 'Régimen Laboral',
+    description: 'Configura LOSEP o Código de Trabajo, franjas nocturnas y límites de suplementarias.',
+    path: '/config/cira/regimen-laboral',
+    badge: 'CIRA V2.0',
+    color: 'bg-purple-50 border-purple-200',
+    textColor: 'text-purple-700',
+  },
+  {
+    icon: <CalendarDays className="w-6 h-6" />,
+    title: 'Jornadas',
+    description: 'Define jornadas laborales, bloques horarios y asignación a empleados.',
+    path: '/config/jornadas',
+    badge: 'CIRA V2.0',
+    color: 'bg-blue-50 border-blue-200',
+    textColor: 'text-blue-700',
+  },
+  {
+    icon: <DollarSign className="w-6 h-6" />,
+    title: 'Multas',
+    description: 'Parámetros de cálculo de multas por atraso, salida anticipada y ausencia injustificada.',
+    path: '/config/cira/multas',
+    badge: 'CIRA V2.0',
+    color: 'bg-rose-50 border-rose-200',
+    textColor: 'text-rose-700',
+  },
+  {
+    icon: <Timer className="w-6 h-6" />,
+    title: 'Horas Extra',
+    description: 'Solicitudes, aprobaciones y liquidación de horas suplementarias y extraordinarias.',
+    path: '/config/cira/horas-extra',
+    badge: 'CIRA V2.0',
+    color: 'bg-amber-50 border-amber-200',
+    textColor: 'text-amber-700',
   },
 ]
 
-export default function ConfigHomePage() {
-  const navigate = useNavigate()
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
+function CardGrid({ items }: { items: ConfigItem[] }) {
+  const navigate = useNavigate()
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      {items.map((item) => (
+        <button
+          key={item.path}
+          onClick={() => navigate(item.path)}
+          className={`w-full flex items-center gap-4 p-5 rounded-2xl border ${item.color} hover:shadow-md transition-all text-left group`}
+        >
+          <div className={`${item.textColor} flex-shrink-0`}>{item.icon}</div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-gray-900 text-sm">{item.title}</span>
+              {item.badge && (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${item.textColor} ${item.color} border`}>
+                  {item.badge}
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 group-hover:text-gray-600 transition-colors" />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export default function ConfigHomePage() {
+  return (
+    <div className="max-w-5xl mx-auto space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Personaliza el sistema según las necesidades de tu empresa. El organigrama es la fuente única de verdad para niveles jerárquicos, jefaturas y ubicación organizacional del empleado.
+          Personaliza el sistema según las necesidades de tu empresa. El organigrama es la fuente única de verdad
+          para niveles jerárquicos, jefaturas y ubicación organizacional del empleado.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {configItems.map((item) => (
-          <button
-            key={item.path}
-            onClick={() => navigate(item.path)}
-            className={`w-full flex items-center gap-4 p-5 rounded-2xl border ${item.color} hover:shadow-md transition-all text-left group`}
-          >
-            <div className={`${item.textColor} flex-shrink-0`}>{item.icon}</div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold text-gray-900 text-sm">{item.title}</span>
-                {item.badge && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${item.textColor} ${item.color} border`}>
-                    {item.badge}
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 group-hover:text-gray-600 transition-colors" />
-          </button>
-        ))}
+      <CardGrid items={generalItems} />
+
+      <div>
+        <div className="flex items-center gap-3 mb-3">
+          <span className="flex-1 h-px bg-gray-200" />
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest">CIRA V2.0</span>
+          <span className="flex-1 h-px bg-gray-200" />
+        </div>
+        <CardGrid items={ciraItems} />
       </div>
     </div>
   )

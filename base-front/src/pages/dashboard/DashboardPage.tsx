@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Users, CheckCircle, Clock, TrendingUp, DollarSign, Bot } from 'lucide-react'
+import { Users, CheckCircle, Clock, TrendingUp, DollarSign, Bot, X } from 'lucide-react'
 import { supabase, ATT_SCHEMA } from '@/config/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTenantContext } from '@/hooks/useTenantContext'
@@ -11,6 +11,7 @@ import { useTenantContext } from '@/hooks/useTenantContext'
 const COLORS_ATRASOS   = ['#E24B4A', '#EF9F27', '#1D9E75', '#378ADD', '#7F77DD']
 const COLORS_HE        = ['#7F77DD', '#1D9E75', '#378ADD']
 const COLORS_NOVEDADES = ['#EF9F27', '#E24B4A', '#378ADD', '#1D9E75']
+const DEPT_COLORS      = ['#E24B4A','#EF9F27','#7F77DD','#1D9E75','#378ADD','#D85A30','#993556']
 
 const NOV_TYPE_COLORS: Record<string, string> = {
   ATRASO:                   '#EF9F27',
@@ -44,6 +45,21 @@ type NovRow      = { type: string; count: number }
 type FineMonthBar = { label: string; amount: number; color: string }
 type AbsenceAlert = { employee_id: string; name: string; count: number }
 type VacLedgerRow = { movement_type: string; days_delta: number }
+type Novedad      = { fecha: string; tipo: string; estado: string }
+type EmpPunch     = { id: string; punched_at: string; meta: Record<string, unknown> | null; source: string | null }
+type EmpOT        = { requested_date: string; hours_requested: number; hour_type: string; status: string }
+type EmpFine      = { incident_date: string; incident_type: string; applied_amount: number; was_capped: boolean }
+type EmpMock      = {
+  name: string; atrasos_min: number; multas_usd: number; multas_note?: string
+  ausencias: number; novedades: Novedad[]; alerta: string; riesgo: 'ALTO' | 'MEDIO' | 'BAJO'
+}
+
+// ─── Attendance constants ─────────────────────────────────────────────────────
+
+const ECO_OFFSET_MS = -5 * 60 * 60 * 1000            // UTC → Ecuador (UTC-5)
+const ATT_ENTRY_SET = new Set(['in','0','3','4','entrada'])
+const ATT_EXIT_SET  = new Set(['out','1','2','5','salida'])
+const IN_THRESHOLD  = 8 * 60 + 10                     // 08:10 as minutes-since-midnight
 
 // ─── Period helpers ───────────────────────────────────────────────────────────
 
@@ -309,7 +325,14 @@ function darkenHex(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16)
   const g = parseInt(hex.slice(3, 5), 16)
   const b = parseInt(hex.slice(5, 7), 16)
-  return `rgb(${Math.round(r * 0.52)},${Math.round(g * 0.52)},${Math.round(b * 0.52)})`
+  const h = (v: number) => Math.round(v).toString(16).padStart(2, '0')
+  return `#${h(r * 0.52)}${h(g * 0.52)}${h(b * 0.52)}`
+}
+function hexAlpha(hex: string, a: number): string {
+  const r = parseInt(hex.slice(1, 3), 16)
+  const g = parseInt(hex.slice(3, 5), 16)
+  const b = parseInt(hex.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},${a})`
 }
 function lightenHex(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16)
@@ -370,7 +393,7 @@ const Donut3D: React.FC<Donut3DProps> = ({ slices, size = 160 }) => {
         ctx.beginPath(); ctx.arc(cx, cy + DEPTH, R, a.sa, a.ea); ctx.arc(cx, cy, R, a.ea, a.sa, true)
         ctx.closePath()
         const grd = ctx.createLinearGradient(cx, cy, cx, cy + DEPTH)
-        grd.addColorStop(0, a.color + 'bb'); grd.addColorStop(1, darkenHex(a.color) + '88')
+        grd.addColorStop(0, hexAlpha(a.color, 0.73)); grd.addColorStop(1, hexAlpha(darkenHex(a.color), 0.53))
         ctx.fillStyle = grd; ctx.fill()
       }
       for (const a of arcs) {
@@ -523,6 +546,354 @@ const BarChart3DIso: React.FC<BarChart3DIsoProps> = ({ bars }) => {
   return <canvas ref={canvasRef} className="w-full" height={200} />
 }
 
+// ─── EmpRealModal — tabs Resumen | Marcaciones | Novedades ───────────────────
+
+function EmpRealModal({ empId, empName, tenantId, from, to, onClose, onViewReports }: {
+  empId: string; empName: string; tenantId: string
+  from: string; to: string
+  onClose: () => void; onViewReports: () => void
+}) {
+  const [tab, setTab] = useState<'resumen' | 'marcaciones' | 'novedades'>('resumen')
+
+  const punchQ = useQuery({
+    queryKey: ['emp-modal-punch', empId, from, to],
+    queryFn: async (): Promise<EmpPunch[]> => {
+      const desdeUTC = new Date(`${from}T00:00:00-05:00`).toISOString()
+      const hastaUTC = new Date(`${to}T23:59:59-05:00`).toISOString()
+      const { data } = await supabase.schema(ATT_SCHEMA).from('punches')
+        .select('id, punched_at, meta, source')
+        .eq('tenant_id', tenantId).eq('employee_id', empId)
+        .gte('punched_at', desdeUTC).lte('punched_at', hastaUTC)
+        .order('punched_at')
+      return (data ?? []) as EmpPunch[]
+    }, staleTime: 60_000,
+  })
+
+  const otQ = useQuery({
+    queryKey: ['emp-modal-ot', empId, from, to],
+    queryFn: async (): Promise<EmpOT[] | null> => {
+      const { data, error } = await supabase.schema(ATT_SCHEMA).from('overtime_requests')
+        .select('requested_date, hours_requested, hour_type, status')
+        .eq('tenant_id', tenantId).eq('employee_id', empId)
+        .gte('requested_date', from).lte('requested_date', to)
+        .order('requested_date')
+      if (error) return null
+      return (data ?? []) as EmpOT[]
+    }, staleTime: 60_000,
+  })
+
+  const fineQ = useQuery({
+    queryKey: ['emp-modal-fine', empId, from, to],
+    queryFn: async (): Promise<EmpFine[] | null> => {
+      const { data, error } = await supabase.schema(ATT_SCHEMA).from('fine_ledger')
+        .select('incident_date, incident_type, applied_amount, was_capped')
+        .eq('tenant_id', tenantId).eq('employee_id', empId)
+        .gte('incident_date', from).lte('incident_date', to)
+        .order('incident_date')
+      if (error) return null
+      return (data ?? []) as EmpFine[]
+    }, staleTime: 60_000,
+  })
+
+  const todayStr = isoDate(new Date())
+
+  const stats = useMemo(() => {
+    type DS = { ins: number[]; outs: number[] }
+    const byDay: Record<string, DS> = {}
+
+    for (const p of (punchQ.data ?? [])) {
+      const ecoMs = new Date(p.punched_at).getTime() + ECO_OFFSET_MS
+      const d  = new Date(ecoMs)
+      const ds = `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`
+      const min = d.getUTCHours() * 60 + d.getUTCMinutes()
+      const mt  = String(p.meta?.['type'] ?? '').toLowerCase()
+      if (!byDay[ds]) byDay[ds] = { ins: [], outs: [] }
+      if (ATT_ENTRY_SET.has(mt))      byDay[ds].ins.push(min)
+      else if (ATT_EXIT_SET.has(mt))  byDay[ds].outs.push(min)
+    }
+
+    let atrasoDays = 0, lateMin = 0, hoursMin = 0
+    const novList: { date: string; tipo: string; detail: string }[] = []
+
+    for (const [ds, slot] of Object.entries(byDay)) {
+      const ins  = [...slot.ins].sort((a, b) => a - b)
+      const outs = [...slot.outs].sort((a, b) => a - b)
+      if (ins.length > 0 && ins[0] > IN_THRESHOLD) {
+        atrasoDays++; lateMin += ins[0] - IN_THRESHOLD
+        novList.push({ date: ds, tipo: 'ATRASO', detail: `${ins[0] - IN_THRESHOLD} min tarde` })
+      }
+      if (ins.length > 0 && outs.length === 0 && ds < todayStr) {
+        novList.push({ date: ds, tipo: 'SIN_SALIDA', detail: 'Sin punch de salida' })
+      }
+      const pairs = Math.min(ins.length, outs.length)
+      for (let i = 0; i < pairs; i++) if (outs[i] > ins[i]) hoursMin += outs[i] - ins[i]
+    }
+
+    novList.sort((a, b) => a.date.localeCompare(b.date))
+    const totalFines = (fineQ.data ?? []).reduce((s, r) => s + Number(r.applied_amount ?? 0), 0)
+    const heApproved = (otQ.data ?? [])?.filter(r => r.status === 'approved')
+      .reduce((s, r) => s + Number(r.hours_requested ?? 0), 0) ?? 0
+
+    return { punches: punchQ.data?.length ?? 0, atrasoDays, lateMin, hoursMin, totalFines, heApproved, novList }
+  }, [punchQ.data, fineQ.data, otQ.data, todayStr])
+
+  function fmtEco(utcStr: string) {
+    const d = new Date(new Date(utcStr).getTime() + ECO_OFFSET_MS)
+    return { date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`, time: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}` }
+  }
+  function fmtHrs(mins: number) { const h = Math.floor(mins/60), m = mins%60; return h > 0 ? `${h}h ${m}m` : `${m}m` }
+
+  const isLoading = punchQ.isLoading || otQ.isLoading || fineQ.isLoading
+  const TABS = [
+    { key: 'resumen', label: 'Resumen' }, { key: 'marcaciones', label: 'Marcaciones' }, { key: 'novedades', label: 'Novedades' },
+  ] as const
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.65)' }}
+      onClick={onClose}>
+      <div className="w-full max-w-lg bg-[#0e1628] border border-white/10 rounded-2xl shadow-2xl flex flex-col"
+        style={{ maxHeight: '90vh' }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 shrink-0">
+          <div>
+            <h2 className="text-base font-semibold text-white">{empName}</h2>
+            <p className="text-xs text-white/35 mt-0.5">{from} — {to}</p>
+          </div>
+          <button onClick={onClose} className="text-white/35 hover:text-white/80 transition-colors"><X size={17} /></button>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b border-white/10 shrink-0">
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+                tab === t.key ? 'text-blue-400 border-b-2 border-blue-400 -mb-px' : 'text-white/40 hover:text-white/60'
+              }`}>{t.label}</button>
+          ))}
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 min-h-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12 text-white/30 text-sm">Cargando…</div>
+          ) : tab === 'resumen' ? (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Marcaciones',  value: stats.punches,                    color: 'text-white'    },
+                  { label: 'Días atrasado',value: stats.atrasoDays,                 color: 'text-amber-400'},
+                  { label: 'Min tardanza', value: stats.lateMin > 0 ? `${stats.lateMin}m` : '0m', color: 'text-amber-400'},
+                  { label: 'Horas trab.',  value: fmtHrs(stats.hoursMin),           color: 'text-green-400'},
+                  { label: 'HE aprobadas', value: `${stats.heApproved}h`,           color: 'text-purple-400'},
+                  { label: 'Multas $',     value: `$${stats.totalFines.toFixed(2)}`,color: 'text-rose-400' },
+                ].map((kpi, i) => (
+                  <div key={i} className="bg-white/5 rounded-xl px-3 py-2.5">
+                    <p className="text-[10px] text-white/35 mb-0.5">{kpi.label}</p>
+                    <p className={`text-base font-bold ${kpi.color}`}>{kpi.value}</p>
+                  </div>
+                ))}
+              </div>
+              {otQ.data === null && <p className="text-[11px] text-amber-400/70"><code className="text-[10px]">overtime_requests</code> — pendiente C-5</p>}
+              {fineQ.data === null && <p className="text-[11px] text-amber-400/70"><code className="text-[10px]">fine_ledger</code> — pendiente C-4</p>}
+            </>
+          ) : tab === 'marcaciones' ? (
+            (punchQ.data ?? []).length === 0 ? (
+              <div className="py-10 text-center text-xs text-white/25">Sin marcaciones en el período</div>
+            ) : (
+              <div className="space-y-1">
+                {(punchQ.data ?? []).map((p, i) => {
+                  const { date, time } = fmtEco(p.punched_at)
+                  const mt = String(p.meta?.['type'] ?? '').toLowerCase()
+                  const isEntry = ATT_ENTRY_SET.has(mt)
+                  return (
+                    <div key={i} className="flex items-center gap-2.5 bg-white/5 rounded-xl px-3 py-2 text-xs">
+                      <span className="font-mono text-white/35 w-24 shrink-0">{date}</span>
+                      <span className="font-mono font-semibold text-white/75 w-12 shrink-0">{time}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${isEntry ? 'bg-green-500/20 text-green-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                        {isEntry ? 'Entrada' : 'Salida'}
+                      </span>
+                      <span className="text-white/35 truncate capitalize">{p.source ?? '—'}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          ) : ( /* novedades */
+            <div className="space-y-4">
+              {stats.novList.length === 0 ? (
+                <div className="py-6 text-center text-xs text-white/25">Sin anomalías detectadas en punches</div>
+              ) : (
+                <div>
+                  <p className="text-[10px] font-medium text-white/40 uppercase tracking-widest mb-2">Anomalías en punches</p>
+                  <div className="space-y-1.5">
+                    {stats.novList.map((n, i) => (
+                      <div key={i} className="flex items-center gap-2.5 bg-white/5 rounded-xl px-3 py-2 text-xs">
+                        <span className="font-mono text-white/35 w-24 shrink-0">{n.date}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${n.tipo === 'ATRASO' ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'}`}>{n.tipo}</span>
+                        <span className="text-white/55">{n.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {fineQ.data === null ? (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-xs text-amber-400">
+                  <code className="font-mono">attendance.fine_ledger</code> — pendiente Sesión C-4
+                </div>
+              ) : (fineQ.data?.length ?? 0) > 0 && (
+                <div>
+                  <p className="text-[10px] font-medium text-white/40 uppercase tracking-widest mb-2">Multas registradas</p>
+                  <div className="space-y-1.5">
+                    {(fineQ.data ?? []).map((f, i) => (
+                      <div key={i} className="flex items-center gap-2.5 bg-white/5 rounded-xl px-3 py-2 text-xs">
+                        <span className="font-mono text-white/35 w-24 shrink-0">{f.incident_date}</span>
+                        <span className="text-white/55 flex-1 truncate">{f.incident_type}</span>
+                        <span className="font-mono font-bold text-rose-400">${Number(f.applied_amount).toFixed(2)}</span>
+                        {f.was_capped && <span className="text-[10px] text-white/30">cap</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {otQ.data !== null && !!otQ.data?.length && (
+                <div>
+                  <p className="text-[10px] font-medium text-white/40 uppercase tracking-widest mb-2">Solicitudes HE</p>
+                  <div className="space-y-1.5">
+                    {(otQ.data ?? []).map((ot, i) => (
+                      <div key={i} className="flex items-center gap-2.5 bg-white/5 rounded-xl px-3 py-2 text-xs">
+                        <span className="font-mono text-white/35 w-24 shrink-0">{ot.requested_date}</span>
+                        <span className="text-white/55 flex-1">{ot.hour_type} · {ot.hours_requested}h</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${ot.status === 'approved' ? 'bg-green-500/20 text-green-400' : ot.status === 'rejected' ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'}`}>{ot.status}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3 px-6 py-4 border-t border-white/10 shrink-0">
+          <button onClick={onViewReports}
+            className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl px-4 py-2.5 transition-colors">
+            Ver marcaciones completas
+          </button>
+          <button onClick={onClose}
+            className="px-4 py-2.5 text-sm text-white/45 hover:text-white/75 rounded-xl hover:bg-white/5 transition-colors">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── EmpDetailModal ───────────────────────────────────────────────────────────
+
+const RIESGO_STYLES: Record<string, { badge: string; dot: string }> = {
+  ALTO:  { badge: 'bg-rose-500/20 text-rose-400 border border-rose-500/30',  dot: '#E24B4A' },
+  MEDIO: { badge: 'bg-amber-500/20 text-amber-400 border border-amber-500/30', dot: '#EF9F27' },
+  BAJO:  { badge: 'bg-green-500/20 text-green-400 border border-green-500/30', dot: '#1D9E75' },
+}
+
+function EmpDetailModal({ emp, onClose, onViewReports }: {
+  emp: EmpMock; onClose: () => void; onViewReports: () => void
+}) {
+  const rc = RIESGO_STYLES[emp.riesgo]
+  return (
+    <div
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex: 9999, backgroundColor: 'rgba(0,0,0,0.65)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md bg-[#0e1628] border border-white/10 rounded-2xl shadow-2xl"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-5 border-b border-white/10">
+          <div>
+            <h2 className="text-base font-semibold text-white">{emp.name}</h2>
+            <span className={`inline-flex items-center gap-1.5 mt-2 px-2.5 py-0.5 rounded-full text-xs font-medium ${rc.badge}`}>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: rc.dot }} />
+              Riesgo {emp.riesgo}
+            </span>
+          </div>
+          <button onClick={onClose} className="text-white/35 hover:text-white/80 transition-colors mt-0.5">
+            <X size={17} />
+          </button>
+        </div>
+
+        {/* KPI mini-row */}
+        <div className="grid grid-cols-3 divide-x divide-white/10 py-4">
+          <div className="px-5">
+            <p className="text-[10px] text-white/40 mb-0.5">Atrasos</p>
+            <p className="text-xl font-bold text-amber-400">{emp.atrasos_min}<span className="text-xs font-normal ml-1 text-white/35">min</span></p>
+          </div>
+          <div className="px-5">
+            <p className="text-[10px] text-white/40 mb-0.5">Multas</p>
+            <p className="text-xl font-bold text-rose-400">${emp.multas_usd.toFixed(2)}</p>
+            {emp.multas_note && <p className="text-[10px] text-white/30 -mt-0.5">{emp.multas_note}</p>}
+          </div>
+          <div className="px-5">
+            <p className="text-[10px] text-white/40 mb-0.5">Ausencias</p>
+            <p className="text-xl font-bold text-blue-400">{emp.ausencias}</p>
+          </div>
+        </div>
+
+        {/* Novedades */}
+        <div className="px-6 pb-4">
+          <p className="text-[11px] font-medium text-white/40 uppercase tracking-widest mb-2">Historial</p>
+          <div className="space-y-1.5">
+            {emp.novedades.map((n, i) => (
+              <div key={i} className="flex items-center gap-2.5 bg-white/5 rounded-xl px-3 py-2 text-xs">
+                <span className="font-mono text-white/35 shrink-0 w-24">{n.fecha}</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold shrink-0 ${
+                  n.tipo === 'AUSENCIA' ? 'bg-blue-500/20 text-blue-400' : 'bg-amber-500/20 text-amber-400'
+                }`}>{n.tipo}</span>
+                <span className="text-white/55 truncate">{n.estado}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* AI alert */}
+        <div className="px-6 pb-4">
+          <div
+            className="flex items-start gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3"
+            style={{ borderLeftWidth: 3, borderLeftColor: '#7F77DD' }}
+          >
+            <Bot size={14} className="mt-0.5 shrink-0" style={{ color: '#7F77DD' }} />
+            <p className="text-xs text-white/65 leading-relaxed">
+              <span className="font-semibold" style={{ color: '#7F77DD' }}>IA detecta: </span>
+              {emp.alerta}
+            </p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex items-center gap-3 px-6 pb-5">
+          <button
+            onClick={onViewReports}
+            className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl px-4 py-2.5 transition-colors"
+          >
+            Ver marcaciones completas
+          </button>
+          <button
+            onClick={onClose}
+            className="px-4 py-2.5 text-sm text-white/45 hover:text-white/75 rounded-xl hover:bg-white/5 transition-colors"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── DonutCard (drill-down wrapper) ──────────────────────────────────────────
 
 const LEVEL_NEXT: Record<DrillLevel, string> = {
@@ -550,9 +921,10 @@ const DonutCard: React.FC<DonutCardProps> = ({
   }, [level, path, empresaSlices, areaSlices, empSlices])
 
   const handleClick = useCallback((sl: Slice) => {
+    console.log('CLICK legend item:', sl.label, sl.empId ?? '(no empId)', '| level:', level)
     if (level === 'empresa') { setLevel('area'); setPath([sl.label]) }
     else if (level === 'area') { setLevel('colaborador'); setPath(p => [p[0], sl.label]) }
-    else onCollaborator(sl.empId)
+    else onCollaborator(sl.empId ?? sl.label)
   }, [level, onCollaborator])
 
   function drillUp(to: DrillLevel) {
@@ -652,6 +1024,53 @@ const NOV_LABELS: Record<string, string> = {
   HORARIO_NOCTURNO_INUSUAL: 'Horario nocturno', AUSENTE: 'Ausente',
 }
 
+// ─── Mock drill data (hardcoded until per-dept RPC is available) ─────────────
+
+const HE_AREA_MOCK: Slice[] = [
+  { label: 'Operaciones',  value: 39.85, color: '#E24B4A' },
+  { label: 'Contabilidad', value: 11.25, color: '#EF9F27' },
+  { label: 'Ventas',       value:  7.83, color: '#7F77DD' },
+]
+const HE_EMP_MOCK: Record<string, Slice[]> = {
+  Operaciones:  [{ label: 'Pedro S.', value: 39.85, color: '#E24B4A' }],
+  Contabilidad: [{ label: 'Ana G.',   value: 11.25, color: '#EF9F27' }],
+  Ventas:       [{ label: 'Juan T.',  value:  7.83, color: '#7F77DD' }],
+}
+const NOV_AREA_MOCK: Record<string, Slice[]> = {
+  Atraso:  [{ label: 'Pedro S.', value: 5, color: '#E24B4A' }, { label: 'Ana G.', value: 2, color: '#EF9F27' }],
+  Ausente: [{ label: 'Pedro S.', value: 3, color: '#E24B4A' }],
+}
+
+const EMP_MOCK_DATA: Record<string, EmpMock> = {
+  'Pedro S.': {
+    name: 'Pedro Salazar',
+    atrasos_min: 127,
+    multas_usd: 24.50,
+    ausencias: 3,
+    novedades: [
+      { fecha: '2026-01-20', tipo: 'AUSENCIA', estado: 'Aceptada (abuela 1)'     },
+      { fecha: '2026-02-17', tipo: 'AUSENCIA', estado: 'En revisión (abuela 2)'  },
+      { fecha: '2026-03-24', tipo: 'AUSENCIA', estado: 'Sospechoso (abuela 3)'   },
+    ],
+    alerta: '3 ausencias por fallecimiento de abuela en 3 meses',
+    riesgo: 'ALTO',
+  },
+  'Ana G.': {
+    name: 'Ana García',
+    atrasos_min: 75,
+    multas_usd: 0,
+    multas_note: 'condonadas',
+    ausencias: 0,
+    novedades: [
+      { fecha: '2026-01-15', tipo: 'ATRASO', estado: 'Justificada' },
+      { fecha: '2026-02-15', tipo: 'ATRASO', estado: 'Justificada' },
+      { fecha: '2026-03-15', tipo: 'ATRASO', estado: 'Justificada' },
+    ],
+    alerta: 'Patrón: atrasos días 15 por trámites bancarios',
+    riesgo: 'BAJO',
+  },
+}
+
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -660,7 +1079,10 @@ export default function DashboardPage() {
   const tctx     = useTenantContext(user?.id)
   const tenantId = tctx.data?.tenantId
 
-  const [period, setPeriod] = useState<Period>('hoy')
+  const [period,       setPeriod]       = useState<Period>('hoy')
+  const [empModal,     setEmpModal]     = useState<EmpMock | null>(null)
+  const [empRealModal, setEmpRealModal] = useState<{ id: string; name: string } | null>(null)
+
   const { from, to } = useMemo(() => periodRange(period), [period])
 
   // ── Queries ─────────────────────────────────────────────────────────────────
@@ -730,6 +1152,28 @@ export default function DashboardPage() {
     staleTime: 120_000,
   })
 
+  const handleCollaborator = useCallback((key?: string) => {
+    console.log('handleCollaborator:', key)
+    if (!key) { navigate('/reports/marcaciones'); return }
+    // UUID → real-data modal
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) {
+      const emp  = rankingQ.data?.find(r => r.employee_id === key)
+      const name = emp?.employee_name || emp?.employee_code || key.slice(0, 8) + '…'
+      setEmpRealModal({ id: key, name })
+      return
+    }
+    // Display label → mock modal (demo data)
+    const mock = EMP_MOCK_DATA[key]
+    if (mock) setEmpModal(mock)
+    else navigate('/reports/marcaciones')
+  }, [navigate, rankingQ.data])
+
+  // ── Debug: log when core data loads ─────────────────────────────────────────
+  React.useEffect(() => {
+    console.log('INIT depts:', depts.data?.length ?? 0, '| emps/ranking:', rankingQ.data?.length ?? 0,
+      '| novPunch:', novPunchQ.data?.length ?? 0, '| tenantId:', tenantId ?? 'null')
+  }, [depts.data, rankingQ.data, novPunchQ.data, tenantId])
+
   // ── Computed stats ───────────────────────────────────────────────────────────
 
   const stats = useMemo(() => {
@@ -780,22 +1224,26 @@ export default function DashboardPage() {
     { label: 'Sin registro', value: Math.max(0, stats.total - stats.a_tiempo - stats.atrasado - stats.novedad), color: COLORS_ATRASOS[3] },
   ].filter(s => s.value > 0), [stats])
 
-  const atrasoAreaSlices = useCallback((_item: string): Slice[] =>
-    (depts.data ?? []).map((d, i) => ({
+  const atrasoAreaSlices = useCallback((_item: string): Slice[] => {
+    const result = (depts.data ?? []).map((d, i) => ({
       label: d.department_name || 'Sin área',
       value: Number(d.atrasado ?? 0) + Number(d.novedad ?? 0),
-      color: COLORS_ATRASOS[i % COLORS_ATRASOS.length],
-    })).filter(s => s.value > 0),
-  [depts.data])
+      color: DEPT_COLORS[i % DEPT_COLORS.length],
+    })).filter(s => s.value > 0)
+    console.log('buildDrillData called: atrasoAreaSlices, item:', _item, '| depts:', depts.data?.length ?? 0, '| result slices:', result.length)
+    return result
+  }, [depts.data])
 
-  const atrasoEmpSlices = useCallback((_area: string, _item: string): Slice[] =>
-    (rankingQ.data ?? []).slice(0, 10).map((r, i) => ({
+  const atrasoEmpSlices = useCallback((_area: string, _item: string): Slice[] => {
+    const result = (rankingQ.data ?? []).slice(0, 10).map((r, i) => ({
       label: r.employee_name || r.employee_code,
       value: Number(r.atrasos ?? 0),
-      color: COLORS_ATRASOS[i % COLORS_ATRASOS.length],
+      color: DEPT_COLORS[i % DEPT_COLORS.length],
       empId: r.employee_id,
-    })).filter(s => s.value > 0),
-  [rankingQ.data])
+    })).filter(s => s.value > 0)
+    console.log('buildDrillData called: atrasoEmpSlices, area:', _area, '| emps:', rankingQ.data?.length ?? 0, '| result slices:', result.length)
+    return result
+  }, [rankingQ.data])
 
   const heEmpresaSlices = useMemo<Slice[]>(() => {
     if (!otQ.data) return []
@@ -826,6 +1274,7 @@ export default function DashboardPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
+    <>
     <div className="p-6 max-w-7xl mx-auto space-y-6">
 
       {/* Header */}
@@ -873,17 +1322,17 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <DonutCard title="Atrasos" empresaSlices={atrasoEmpresaSlices}
           areaSlices={atrasoAreaSlices} empSlices={atrasoEmpSlices}
-          onCollaborator={() => navigate('/reports/marcaciones')} />
+          onCollaborator={handleCollaborator} />
         <DonutCard title="Horas Extra" empresaSlices={heEmpresaSlices}
-          areaSlices={() => []} empSlices={() => []}
-          onCollaborator={() => navigate('/reports/marcaciones')}
+          areaSlices={() => HE_AREA_MOCK}
+          empSlices={(area) => HE_EMP_MOCK[area] ?? []}
+          onCollaborator={handleCollaborator}
           pending={otQ.data === null}
           pendingTable="attendance.overtime_requests" pendingSession="Sesión C-5" />
         <DonutCard title="Novedades" empresaSlices={novEmpresaSlices}
-          areaSlices={() => []} empSlices={() => []}
-          onCollaborator={() => navigate('/reports/marcaciones')}
-          pending={novQ.data === null}
-          pendingTable="attendance.novelties" pendingSession="Sesión GAP-2" />
+          areaSlices={(label) => NOV_AREA_MOCK[label] ?? []}
+          empSlices={() => []}
+          onCollaborator={handleCollaborator} />
       </div>
 
       {/* ── Fila 3: Barras 3D multas  |  Ranking + Vacaciones ───────────────── */}
@@ -1000,5 +1449,25 @@ export default function DashboardPage() {
       </div>
 
     </div>
+
+    {/* ── Employee detail modal ────────────────────────────────────────────── */}
+    {empModal && (
+      <EmpDetailModal
+        emp={empModal}
+        onClose={() => setEmpModal(null)}
+        onViewReports={() => { setEmpModal(null); navigate('/reports/marcaciones') }}
+      />
+    )}
+    {empRealModal && tenantId && (
+      <EmpRealModal
+        empId={empRealModal.id}
+        empName={empRealModal.name}
+        tenantId={tenantId}
+        from={from} to={to}
+        onClose={() => setEmpRealModal(null)}
+        onViewReports={() => { setEmpRealModal(null); navigate('/reports/marcaciones') }}
+      />
+    )}
+    </>
   )
 }

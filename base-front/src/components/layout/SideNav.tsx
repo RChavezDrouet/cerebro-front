@@ -18,17 +18,18 @@ const MAIN_NAV = [
 ]
 
 const REPORTS_SUB: SubItem[] = [
-  { to: '/reports/marcaciones', label: 'Marcaciones'    },
+  { to: '/reports/marcaciones', label: 'Marcaciones'     },
   { to: '/reports/asistencia',  label: 'Resumen Mensual' },
+  { to: '/reports/cira',        label: 'Reporte CIRA'    },
 ]
 
-const CIRA_ITEMS: SubItem[] = [
+// CIRA V2.0 items live under Configuración
+const CONFIG_CIRA_SUB: SubItem[] = [
   { to: '/config/cira/regimen-laboral', label: 'Régimen Laboral' },
   { to: '/config/cira/multas',          label: 'Multas'          },
   { to: '/config/cira/horas-extra',     label: 'Horas Extra'     },
   { to: '/config/jornadas',             label: 'Jornadas'        },
   { to: '/config/jornadas/asignacion',  label: 'Asignación'      },
-  { to: '/reports/cira',                label: 'Reporte CIRA'    },
 ]
 
 // ─── Components ───────────────────────────────────────────────────────────────
@@ -86,8 +87,6 @@ export function SideNav({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <nav className="flex-1 overflow-auto px-3 py-3 space-y-0.5">
-
-        {/* Main items — sub-items rendered inline after their parent */}
         {MAIN_NAV.map((item) => (
           <React.Fragment key={item.to}>
             <MainLink
@@ -97,6 +96,8 @@ export function SideNav({ onNavigate }: { onNavigate?: () => void }) {
               end={item.to === '/'}
               onNavigate={onNavigate}
             />
+
+            {/* Reportes sub-items */}
             {item.to === '/reports' && (
               <div className="ml-3 border-l border-white/10 pl-3 pt-0.5 pb-1 space-y-0.5">
                 {REPORTS_SUB.map((s) => (
@@ -104,28 +105,23 @@ export function SideNav({ onNavigate }: { onNavigate?: () => void }) {
                 ))}
               </div>
             )}
+
+            {/* Configuración sub-items — CIRA V2.0 */}
+            {item.to === '/config' && (
+              <div className="ml-3 border-l border-white/10 pl-3 pt-0.5 pb-1 space-y-0.5">
+                <p className="px-3 pt-1 pb-0.5 text-[10px] font-semibold text-white/25 uppercase tracking-widest">
+                  CIRA V2.0
+                </p>
+                {CONFIG_CIRA_SUB.map((s) => (
+                  <SubLink key={s.to} {...s} onNavigate={onNavigate} />
+                ))}
+              </div>
+            )}
           </React.Fragment>
         ))}
-
-        {/* CIRA V2.0 section */}
-        <div className="pt-3">
-          <div className="px-3 pb-1.5 flex items-center gap-2">
-            <span className="flex-1 h-px bg-white/10" />
-            <span className="text-xs font-semibold text-white/30 uppercase tracking-widest">
-              CIRA V2.0
-            </span>
-            <span className="flex-1 h-px bg-white/10" />
-          </div>
-          <div className="space-y-0.5">
-            {CIRA_ITEMS.map((s) => (
-              <SubLink key={s.to} {...s} onNavigate={onNavigate} />
-            ))}
-          </div>
-        </div>
-
       </nav>
 
-      <div className="p-4 border-t border-white/10 text-xs text-white/50">v4.9.13-cira</div>
+      <div className="p-4 border-t border-white/10 text-xs text-white/50">v4.9.14-nav</div>
     </div>
   )
 }
