@@ -226,7 +226,7 @@ function note(text: string) {
   )
 }
 
-function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
+function Toggle({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3">
       <button

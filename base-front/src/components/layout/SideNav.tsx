@@ -12,7 +12,7 @@ type SubItem = { to: string; label: string }
 
 const MAIN_NAV = [
   { to: '/',          label: 'Dashboard',     icon: <LayoutDashboard size={18} /> },
-  { to: '/employees', label: 'Empleados',     icon: <Users           size={18} /> },
+  { to: '/employees', label: 'Colaboradores', icon: <Users           size={18} /> },
   { to: '/reports',   label: 'Reportes',      icon: <BarChart2       size={18} /> },
   { to: '/payroll',   label: 'Nómina',        icon: <Banknote        size={18} /> },
   { to: '/config',    label: 'Configuración', icon: <Settings        size={18} /> },
