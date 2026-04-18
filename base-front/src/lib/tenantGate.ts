@@ -1,30 +1,135 @@
-import { supabase } from '@/config/supabase'
-import { env } from '@/config/env'
+import {
+  supabase,
+  PROFILES_TABLE,
+  TENANTS_TABLE,
+  TENANT_GATE_ENABLED,
+} from '@/config/supabase'
 
-export type TenantGateResult = { paused: boolean; title: string; body: string }
+export interface TenantGateState {
+  allowed: boolean
+  status: 'active' | 'paused' | 'suspended' | 'unknown'
+  message: string | null
+  tenantId: string | null
+}
 
-export async function checkTenantStatus(userId: string): Promise<TenantGateResult> {
-  const ok: TenantGateResult = { paused: false, title: '', body: '' }
+export async function resolveTenantGate(): Promise<TenantGateState> {
+  try {
+    if (!TENANT_GATE_ENABLED) {
+      return {
+        allowed: true,
+        status: 'active',
+        message: null,
+        tenantId: null,
+      }
+    }
 
-  const { data: profile } = await supabase
-    .from(env.VITE_PROFILES_TABLE)
-    .select('tenant_id')
-    .eq('id', userId)
-    .maybeSingle()
+    if (!supabase || !supabase.auth) {
+      console.error('[tenantGate] supabase.auth no está disponible')
+      return {
+        allowed: false,
+        status: 'unknown',
+        message: 'Cliente de autenticación no disponible',
+        tenantId: null,
+      }
+    }
 
-  if (!profile?.tenant_id) return ok
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-  const { data: tenant } = await supabase
-    .from(env.VITE_TENANTS_TABLE)
-    .select('status')
-    .eq('id', profile.tenant_id)
-    .maybeSingle()
+    if (userError || !user) {
+      return {
+        allowed: false,
+        status: 'unknown',
+        message: 'Sesión no válida',
+        tenantId: null,
+      }
+    }
 
-  if (!tenant || tenant.status !== 'paused') return ok
+    const profileRs = await supabase
+      .from(PROFILES_TABLE)
+      .select('tenant_id')
+      .eq('id', user.id)
+      .single()
 
-  return {
-    paused: true,
-    title: 'Empresa suspendida',
-    body: 'Tu empresa está temporalmente suspendida. Contacta al soporte para más información.'
+    const tenantId = profileRs.data?.tenant_id ?? null
+
+    if (profileRs.error || !tenantId) {
+      return {
+        allowed: false,
+        status: 'unknown',
+        message: 'No se pudo resolver el tenant del usuario',
+        tenantId: null,
+      }
+    }
+
+    const tenantRs = await supabase
+      .from(TENANTS_TABLE)
+      .select('id, status, is_suspended')
+      .eq('id', tenantId)
+      .single()
+
+    if (tenantRs.error || !tenantRs.data) {
+      return {
+        allowed: false,
+        status: 'unknown',
+        message: 'No se pudo consultar el estado de la empresa',
+        tenantId,
+      }
+    }
+
+    const appSettingsRs = await supabase
+      .from('app_settings')
+      .select('paused_message_title, paused_message_body')
+      .eq('id', 1)
+      .maybeSingle()
+
+    const tenantStatus = tenantRs.data.status as 'active' | 'paused' | 'suspended' | null
+    const isSuspended = Boolean(tenantRs.data.is_suspended)
+
+    const effectiveStatus: TenantGateState['status'] = isSuspended
+      ? 'suspended'
+      : tenantStatus === 'active' || tenantStatus === 'paused'
+        ? tenantStatus
+        : 'unknown'
+
+    if (effectiveStatus !== 'active') {
+      const title =
+        appSettingsRs.data?.paused_message_title?.trim() || 'Servicio pausado'
+
+      const body =
+        appSettingsRs.data?.paused_message_body?.trim() ||
+        'Tu empresa se encuentra temporalmente pausada. Contacta al administrador.'
+
+      return {
+        allowed: false,
+        status: effectiveStatus,
+        tenantId,
+        message: `${title}: ${body}`,
+      }
+    }
+
+    return {
+      allowed: true,
+      status: 'active',
+      message: null,
+      tenantId,
+    }
+  } catch (error) {
+    console.error('[tenantGate] resolveTenantGate error:', error)
+
+    return {
+      allowed: false,
+      status: 'unknown',
+      message: 'No se pudo validar el estado del tenant',
+      tenantId: null,
+    }
   }
 }
+
+export async function checkTenantStatus(): Promise<TenantGateState> {
+  return resolveTenantGate()
+}
+
+export default checkTenantStatus

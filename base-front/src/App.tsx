@@ -18,6 +18,7 @@ import AttendanceHomePage from '@/pages/attendance/AttendanceHomePage'
 import DailyAttendanceReportPage from '@/pages/attendance/DailyAttendanceReportPage'
 import AttendanceNoveltiesPage from '@/pages/attendance/AttendanceNoveltiesPage'
 import UsbImportPage from '@/pages/attendance/UsbImportPage'
+import TestAIPage from '@/pages/TestAIPage'
 
 import ConfigHomePage from '@/pages/config/ConfigHomePage'
 import CompanyConfigPage from '@/pages/config/CompanyConfigPage'
@@ -86,6 +87,7 @@ export default function App() {
           <Route path="/attendance/daily" element={<DailyAttendanceReportPage />} />
           <Route path="/attendance/novelties" element={<AttendanceNoveltiesPage />} />
           <Route path="/attendance/usb-import" element={<UsbImportPage />} />
+          <Route path="/attendance/test-ai" element={<TestAIPage />} />
           <Route path="/attendance/detail" element={<Navigate to="/attendance/daily" replace />} />
 
           <Route path="/reports" element={<Navigate to="/reports/marcaciones" replace />} />
