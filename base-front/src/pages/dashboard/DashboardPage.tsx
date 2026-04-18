@@ -121,6 +121,30 @@ type KpiCardDefinition = {
   chipTone?: KpiTone
 }
 
+type DashboardAbsenceBreakdown = {
+  justified: number
+  pending: number
+  unjustified: number
+}
+
+type DashboardPermissionBreakdown = {
+  approved: number
+  pending: number
+  rejected: number
+}
+
+const EMPTY_ABSENCE_BREAKDOWN: DashboardAbsenceBreakdown = {
+  justified: 0,
+  pending: 0,
+  unjustified: 0,
+}
+
+const EMPTY_PERMISSION_BREAKDOWN: DashboardPermissionBreakdown = {
+  approved: 0,
+  pending: 0,
+  rejected: 0,
+}
+
 const PERIODS: DashboardPeriod[] = ['hoy', 'semana', 'mes', 'trimestre']
 
 const PERIOD_LABELS: Record<DashboardPeriod, string> = {
@@ -203,6 +227,18 @@ function createEmptyDrillState(): DrillState {
 function safePercent(value: number) {
   if (!Number.isFinite(value)) return 0
   return Math.max(0, Math.min(100, value))
+}
+
+function isAbsenceBreakdown(
+  breakdown: ReturnType<typeof buildMetricStatusBreakdown>,
+): breakdown is DashboardAbsenceBreakdown {
+  return breakdown !== null && 'justified' in breakdown && 'unjustified' in breakdown
+}
+
+function isPermissionBreakdown(
+  breakdown: ReturnType<typeof buildMetricStatusBreakdown>,
+): breakdown is DashboardPermissionBreakdown {
+  return breakdown !== null && 'approved' in breakdown && 'rejected' in breakdown
 }
 
 function formatPercent(value: number) {
@@ -1036,8 +1072,15 @@ export default function DashboardPage() {
 
   const kpis = React.useMemo(() => buildDashboardKpis(summaries), [summaries])
   const channelPulse = React.useMemo(() => (data ? buildAttendanceChannelPulse(data.punchSourceDataset.rows) : []), [data])
-  const absenceBreakdown = React.useMemo(() => buildMetricStatusBreakdown(summaries, 'absence'), [summaries])
-  const permissionBreakdown = React.useMemo(() => buildMetricStatusBreakdown(summaries, 'permission'), [summaries])
+  const absenceBreakdown = React.useMemo<DashboardAbsenceBreakdown>(() => {
+    const breakdown = buildMetricStatusBreakdown(summaries, 'absence')
+    return isAbsenceBreakdown(breakdown) ? breakdown : EMPTY_ABSENCE_BREAKDOWN
+  }, [summaries])
+
+  const permissionBreakdown = React.useMemo<DashboardPermissionBreakdown>(() => {
+    const breakdown = buildMetricStatusBreakdown(summaries, 'permission')
+    return isPermissionBreakdown(breakdown) ? breakdown : EMPTY_PERMISSION_BREAKDOWN
+  }, [summaries])
 
   const metricRows = React.useMemo<Record<DashboardMetricKey, OrgMetricRow[]>>(() => {
     if (!data) {
@@ -1392,25 +1435,21 @@ export default function DashboardPage() {
     )
   }
 
-  const absenceBadges = absenceBreakdown
-    ? (
-      <>
-        <DataSourceBadge label={`Justificadas ${formatNumber(absenceBreakdown.justified)}`} tone="good" />
-        <DataSourceBadge label={`Pendientes ${formatNumber(absenceBreakdown.pending)}`} tone="warn" />
-        <DataSourceBadge label={`No justificadas ${formatNumber(absenceBreakdown.unjustified)}`} tone="bad" />
-      </>
-    )
-    : undefined
+  const absenceBadges = (
+    <>
+      <DataSourceBadge label={`Justificadas ${formatNumber(absenceBreakdown.justified)}`} tone="good" />
+      <DataSourceBadge label={`Pendientes ${formatNumber(absenceBreakdown.pending)}`} tone="warn" />
+      <DataSourceBadge label={`No justificadas ${formatNumber(absenceBreakdown.unjustified)}`} tone="bad" />
+    </>
+  )
 
-  const permissionBadges = permissionBreakdown
-    ? (
-      <>
-        <DataSourceBadge label={`Aprobados ${formatNumber(permissionBreakdown.approved)}`} tone="good" />
-        <DataSourceBadge label={`Pendientes ${formatNumber(permissionBreakdown.pending)}`} tone="warn" />
-        <DataSourceBadge label={`Rechazados ${formatNumber(permissionBreakdown.rejected)}`} tone="bad" />
-      </>
-    )
-    : undefined
+  const permissionBadges = (
+    <>
+      <DataSourceBadge label={`Aprobados ${formatNumber(permissionBreakdown.approved)}`} tone="good" />
+      <DataSourceBadge label={`Pendientes ${formatNumber(permissionBreakdown.pending)}`} tone="warn" />
+      <DataSourceBadge label={`Rechazados ${formatNumber(permissionBreakdown.rejected)}`} tone="bad" />
+    </>
+  )
 
   const journeySliceTotal = journeySlices.reduce((sum, slice) => sum + slice.value, 0)
 

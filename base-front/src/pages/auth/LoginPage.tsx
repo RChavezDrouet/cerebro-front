@@ -39,7 +39,7 @@ export default function LoginPage() {
       if (!uid) return toast.error('Sesión inválida')
 
       const gate = await checkTenantStatus(uid)
-      if (gate.paused) {
+      if (gate.blocked) {
         setPaused({ title: gate.title, body: gate.body })
         await supabase.auth.signOut()
         return
