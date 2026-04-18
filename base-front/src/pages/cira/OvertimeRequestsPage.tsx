@@ -39,10 +39,10 @@ const STATUS_LABELS: Record<OvertimeStatus, string> = {
 }
 
 const STATUS_CLASSES: Record<OvertimeStatus, string> = {
-  pending:     'bg-amber-100 text-amber-700',
-  approved:    'bg-green-100 text-green-700',
-  rejected:    'bg-red-100 text-red-700',
-  compensated: 'bg-blue-100 text-blue-700',
+  pending:     'bg-amber-500/20 text-amber-300',
+  approved:    'bg-green-500/20 text-green-300',
+  rejected:    'bg-red-500/20 text-red-300',
+  compensated: 'bg-blue-500/20 text-blue-300',
 }
 
 const HOUR_TYPE_LABELS: Record<HourType, string> = {
@@ -180,10 +180,10 @@ const OvertimeRequestsPage: React.FC = () => {
   if (tablePending) {
     return (
       <div className="p-6 max-w-5xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">Solicitudes de Horas Extra</h1>
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-6 py-5 text-sm text-amber-700">
+        <h1 className="text-2xl font-bold text-white mb-4">Solicitudes de Horas Extra</h1>
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-6 py-5 text-sm text-amber-300">
           La tabla{' '}
-          <code className="font-mono text-xs bg-amber-100 px-1 rounded">
+          <code className="font-mono text-xs bg-amber-500/20 px-1 rounded">
             attendance.overtime_requests
           </code>{' '}
           aún no existe. Se creará en la Sesión C-5 del roadmap CIRA V2.0.
@@ -197,8 +197,8 @@ const OvertimeRequestsPage: React.FC = () => {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Solicitudes de Horas Extra</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-white">Solicitudes de Horas Extra</h1>
+        <p className="text-sm text-gray-400 mt-1">
           Gestión de solicitudes de horas suplementarias y extraordinarias del tenant.
         </p>
       </div>
@@ -211,8 +211,8 @@ const OvertimeRequestsPage: React.FC = () => {
             onClick={() => setFilter(tab.value)}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               filter === tab.value
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-white/15 text-white shadow-sm'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
             {tab.label}
@@ -227,44 +227,44 @@ const OvertimeRequestsPage: React.FC = () => {
 
       {/* Table */}
       {filtered.length === 0 ? (
-        <div className="bg-white/5 border border-gray-200 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
+        <div className="bg-white/5 border border-white/10 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
           No hay solicitudes{filter !== 'all' ? ` con estado "${STATUS_LABELS[filter as OvertimeStatus]}"` : ''}.
         </div>
       ) : (
         <div className="overflow-x-auto bg-white/5 rounded-xl border border-white/10">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-white/5 text-left border-b border-gray-200">
-                <th className="px-4 py-3 font-medium text-gray-600">Empleado</th>
-                <th className="px-4 py-3 font-medium text-gray-600">Fecha</th>
-                <th className="px-4 py-3 font-medium text-gray-600 text-right">Horas</th>
-                <th className="px-4 py-3 font-medium text-gray-600">Tipo</th>
-                <th className="px-4 py-3 font-medium text-gray-600">Justificación</th>
-                <th className="px-4 py-3 font-medium text-gray-600 text-center">Canjear</th>
-                <th className="px-4 py-3 font-medium text-gray-600">Estado</th>
+              <tr className="bg-white/5 text-left border-b border-white/10">
+                <th className="px-4 py-3 font-medium text-gray-400">Empleado</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Fecha</th>
+                <th className="px-4 py-3 font-medium text-gray-400 text-right">Horas</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Tipo</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Justificación</th>
+                <th className="px-4 py-3 font-medium text-gray-400 text-center">Canjear</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Estado</th>
                 {canManage && (
-                  <th className="px-4 py-3 font-medium text-gray-600">Acciones</th>
+                  <th className="px-4 py-3 font-medium text-gray-400">Acciones</th>
                 )}
               </tr>
             </thead>
             <tbody>
               {filtered.map((req) => (
-                <tr key={req.id} className="border-b border-gray-100 hover:bg-white/5">
-                  <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                <tr key={req.id} className="border-b border-white/10 hover:bg-white/5">
+                  <td className="px-4 py-3 font-medium text-gray-200 whitespace-nowrap">
                     <span className="font-mono text-xs text-gray-400">{req.employee_id.slice(0, 8)}…</span>
                   </td>
-                  <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                  <td className="px-4 py-3 text-gray-300 whitespace-nowrap">
                     {req.requested_date}
                   </td>
                   <td className="px-4 py-3 text-right font-mono">
                     {req.hours_requested}h
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
-                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-600">
+                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-400">
                       {HOUR_TYPE_LABELS[req.hour_type] ?? req.hour_type}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-600 max-w-xs">
+                  <td className="px-4 py-3 text-gray-400 max-w-xs">
                     <span title={req.justification}>
                       {req.justification.length > 60
                         ? req.justification.slice(0, 60) + '…'
@@ -278,7 +278,7 @@ const OvertimeRequestsPage: React.FC = () => {
                   </td>
                   <td className="px-4 py-3 text-center">
                     {req.compensate_as_time ? (
-                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700">
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-purple-500/20 text-purple-300">
                         Tiempo
                       </span>
                     ) : (
@@ -343,8 +343,8 @@ const OvertimeRequestsPage: React.FC = () => {
             className="bg-[#0f1a2e] rounded-xl shadow-xl border border-white/10 p-6 w-full max-w-md mx-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-semibold text-gray-900 mb-1">Rechazar solicitud</h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <h3 className="text-base font-semibold text-white mb-1">Rechazar solicitud</h3>
+            <p className="text-sm text-gray-400 mb-4">
               Escribe una nota explicando el motivo del rechazo.
             </p>
             <textarea
@@ -352,7 +352,7 @@ const OvertimeRequestsPage: React.FC = () => {
               onChange={(e) => setRejectModal(prev => ({ ...prev, note: e.target.value }))}
               rows={4}
               placeholder="Motivo del rechazo…"
-              className="w-full p-3 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-red-500 focus:outline-none resize-none"
+              className="w-full p-3 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-red-500 focus:outline-none resize-none"
             />
             <div className="flex justify-end gap-3 mt-4">
               <button

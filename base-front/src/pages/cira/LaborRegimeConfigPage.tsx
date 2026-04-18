@@ -148,10 +148,10 @@ const LaborRegimeConfigPage: React.FC = () => {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">
+        <h1 className="text-2xl font-bold text-white">
           Configuración de Régimen Laboral
         </h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <p className="text-sm text-gray-400 mt-1">
           Define el régimen laboral y los parámetros de cálculo para tu empresa.
         </p>
       </div>
@@ -169,7 +169,7 @@ const LaborRegimeConfigPage: React.FC = () => {
           <select
             value={config.regime}
             onChange={(e) => handleChange('regime', e.target.value as LaborRegimeConfig['regime'])}
-            className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            className="w-full p-2 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
           >
             <option value="CODIGO_TRABAJO">Código de Trabajo (Sector Privado)</option>
             <option value="LOSEP">LOSEP (Sector Público)</option>
@@ -183,21 +183,21 @@ const LaborRegimeConfigPage: React.FC = () => {
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Inicio</label>
+              <label className="block text-xs text-gray-400 mb-1">Inicio</label>
               <input
                 type="time"
                 value={config.night_start}
                 onChange={(e) => handleChange('night_start', e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Fin (puede cruzar medianoche)</label>
+              <label className="block text-xs text-gray-400 mb-1">Fin (puede cruzar medianoche)</label>
               <input
                 type="time"
                 value={config.night_end}
                 onChange={(e) => handleChange('night_end', e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
           </div>
@@ -210,23 +210,23 @@ const LaborRegimeConfigPage: React.FC = () => {
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Máx. Diarias (horas)</label>
+              <label className="block text-xs text-gray-400 mb-1">Máx. Diarias (horas)</label>
               <input
                 type="number"
                 min={0} max={24} step={0.5}
                 value={config.max_suplem_daily_h}
                 onChange={(e) => handleChange('max_suplem_daily_h', parseFloat(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Máx. Mensuales (horas)</label>
+              <label className="block text-xs text-gray-400 mb-1">Máx. Mensuales (horas)</label>
               <input
                 type="number"
                 min={0} max={300} step={1}
                 value={config.max_suplem_monthly_h}
                 onChange={(e) => handleChange('max_suplem_monthly_h', parseFloat(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
           </div>
@@ -239,33 +239,33 @@ const LaborRegimeConfigPage: React.FC = () => {
           </p>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Tope de Multas (%)</label>
+              <label className="block text-xs text-gray-400 mb-1">Tope de Multas (%)</label>
               <input
                 type="number"
                 min={0} max={100} step={0.5}
                 value={config.fine_cap_pct}
                 onChange={(e) => handleChange('fine_cap_pct', parseFloat(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Umbral Reincidencia (atrasos)</label>
+              <label className="block text-xs text-gray-400 mb-1">Umbral Reincidencia (atrasos)</label>
               <input
                 type="number"
                 min={1} max={31} step={1}
                 value={config.reincidence_threshold}
                 onChange={(e) => handleChange('reincidence_threshold', parseInt(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Multiplicador Reincidencia</label>
+              <label className="block text-xs text-gray-400 mb-1">Multiplicador Reincidencia</label>
               <input
                 type="number"
                 min={1} max={10} step={0.1}
                 value={config.reincidence_multiplier}
                 onChange={(e) => handleChange('reincidence_multiplier', parseFloat(e.target.value))}
-                className="w-full p-2 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                className="w-full p-2 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
             </div>
           </div>
@@ -282,7 +282,7 @@ const LaborRegimeConfigPage: React.FC = () => {
 
       {/* Tabla de recargos (readonly) */}
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">
+        <h2 className="text-lg font-semibold text-white mb-4">
           Reglas de Recargo Configuradas
         </h2>
         <p className="text-xs text-gray-400 mb-4">
@@ -292,42 +292,42 @@ const LaborRegimeConfigPage: React.FC = () => {
 
         {Object.entries(groupedRules).map(([regime, regimeRules]) => (
           <div key={regime} className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-600 uppercase tracking-wide mb-2">
+            <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">
               {regime === 'CODIGO_TRABAJO' ? 'Código de Trabajo' : 'LOSEP'}
             </h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
                 <thead>
                   <tr className="bg-white/5 text-left">
-                    <th className="px-4 py-2 border border-gray-200 font-medium text-gray-600">Tipo de Hora</th>
-                    <th className="px-4 py-2 border border-gray-200 font-medium text-gray-600">Multiplicador</th>
-                    <th className="px-4 py-2 border border-gray-200 font-medium text-gray-600">Factor HB</th>
-                    <th className="px-4 py-2 border border-gray-200 font-medium text-gray-600">Activo</th>
-                    <th className="px-4 py-2 border border-gray-200 font-medium text-gray-600">Vigente desde</th>
+                    <th className="px-4 py-2 border border-white/10 font-medium text-gray-400">Tipo de Hora</th>
+                    <th className="px-4 py-2 border border-white/10 font-medium text-gray-400">Multiplicador</th>
+                    <th className="px-4 py-2 border border-white/10 font-medium text-gray-400">Factor HB</th>
+                    <th className="px-4 py-2 border border-white/10 font-medium text-gray-400">Activo</th>
+                    <th className="px-4 py-2 border border-white/10 font-medium text-gray-400">Vigente desde</th>
                   </tr>
                 </thead>
                 <tbody>
                   {regimeRules.map((rule) => (
                     <tr key={rule.id} className="hover:bg-white/5">
-                      <td className="px-4 py-2 border border-gray-200">
+                      <td className="px-4 py-2 border border-white/10">
                         {HOUR_TYPE_LABELS[rule.hour_type] ?? rule.hour_type}
                       </td>
-                      <td className="px-4 py-2 border border-gray-200 font-mono">
+                      <td className="px-4 py-2 border border-white/10 font-mono">
                         × {rule.multiplier}
                       </td>
-                      <td className="px-4 py-2 border border-gray-200 text-gray-500 text-xs">
+                      <td className="px-4 py-2 border border-white/10 text-gray-400 text-xs">
                         HB × {rule.multiplier}
                       </td>
-                      <td className="px-4 py-2 border border-gray-200">
+                      <td className="px-4 py-2 border border-white/10">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
                           rule.is_active
-                            ? 'bg-green-100 text-green-700'
+                            ? 'bg-green-500/20 text-green-300'
                             : 'bg-white/10 text-gray-500'
                         }`}>
                           {rule.is_active ? 'Activo' : 'Inactivo'}
                         </span>
                       </td>
-                      <td className="px-4 py-2 border border-gray-200 text-gray-500">
+                      <td className="px-4 py-2 border border-white/10 text-gray-400">
                         {rule.valid_from ?? '—'}
                       </td>
                     </tr>

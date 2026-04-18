@@ -140,6 +140,9 @@ export const employeeFormSchema = z.object({
   degree_title:          z.string().max(200).nullable().optional(),
   education_institution: z.string().max(300).nullable().optional(),
 
+  // Cargas familiares
+  dependents_registered_at: z.string().nullable().optional(),
+
   // Estado laboral
   employment_status: z.enum(['ACTIVE', 'VACATION', 'SUSPENDED', 'TERMINATED']).default('ACTIVE'),
   vacation_start:    z.string().nullable().optional(),

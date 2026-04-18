@@ -343,6 +343,7 @@ const INITIAL_FORM: EmployeeFormValues = {
   education_level:       null,
   degree_title:          null,
   education_institution: null,
+  dependents_registered_at: null,
 
   employment_status: 'ACTIVE',
   vacation_start:    null,
@@ -377,6 +378,342 @@ const INITIAL_FORM: EmployeeFormValues = {
   password_confirm: '',
 }
 
+// ─── Dependents ───────────────────────────────────────────────────────────────
+
+type DependentRow = {
+  id: string
+  full_name: string
+  birth_date: string | null
+  identification: string | null
+  relationship: 'CONYUGE' | 'UNION_HECHO' | 'HIJO'
+  has_disability: boolean
+  is_active: boolean
+  isNew: boolean
+}
+
+async function fetchDependents(tenantId: string, employeeId: string): Promise<DependentRow[]> {
+  const { data, error } = await supabase
+    .schema('public')
+    .from('employee_dependents')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('employee_id', employeeId)
+    .order('created_at')
+
+  if (error) return []
+  return (data ?? []).map((r: any) => ({
+    id:             r.id,
+    full_name:      r.full_name ?? '',
+    birth_date:     r.birth_date ?? null,
+    identification: r.identification ?? null,
+    relationship:   r.relationship ?? 'HIJO',
+    has_disability: r.has_disability ?? false,
+    is_active:      r.is_active ?? true,
+    isNew:          false,
+  }))
+}
+
+async function saveDependents(tenantId: string, employeeId: string, rows: DependentRow[]) {
+  await supabase
+    .schema('public')
+    .from('employee_dependents')
+    .delete()
+    .eq('employee_id', employeeId)
+    .eq('tenant_id', tenantId)
+
+  if (rows.length === 0) return
+
+  const { error } = await supabase.schema('public').from('employee_dependents').insert(
+    rows.map((r) => ({
+      tenant_id:      tenantId,
+      employee_id:    employeeId,
+      full_name:      r.full_name,
+      birth_date:     r.birth_date || null,
+      identification: r.identification || null,
+      relationship:   r.relationship,
+      has_disability: r.has_disability,
+      is_active:      r.is_active,
+    }))
+  )
+  if (error) throw error
+}
+
+function getAge(birthDate: string | null): number | null {
+  if (!birthDate) return null
+  return Math.floor((Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 3600 * 1000))
+}
+
+// ─── CargasFamiliaresSection ──────────────────────────────────────────────────
+
+function CargasFamiliaresSection({
+  dependents,
+  setDependents,
+  registeredAt,
+  onChangeRegisteredAt,
+}: {
+  dependents: DependentRow[]
+  setDependents: React.Dispatch<React.SetStateAction<DependentRow[]>>
+  registeredAt: string | null
+  onChangeRegisteredAt: (v: string | null) => void
+}) {
+  const today        = new Date()
+  const march30      = new Date(today.getFullYear(), 2, 30)
+  const pastDeadline = today > march30
+  const regDate      = registeredAt ? new Date(registeredAt) : null
+  const showWarning  = !regDate || regDate > march30
+
+  const spouse      = dependents.find((d) => d.relationship === 'CONYUGE' || d.relationship === 'UNION_HECHO')
+  const hasSpouse   = !!spouse
+  const children    = dependents.filter((d) => d.relationship === 'HIJO')
+
+  const validCount = dependents.filter((d) => {
+    if (!d.is_active) return false
+    if (d.relationship === 'CONYUGE' || d.relationship === 'UNION_HECHO') return true
+    if (d.relationship === 'HIJO') {
+      if (d.has_disability) return true
+      const age = getAge(d.birth_date)
+      return age !== null && age < 18
+    }
+    return false
+  }).length
+
+  function updateDep(idx: number, patch: Partial<DependentRow>) {
+    setDependents((prev) => prev.map((d, i) => (i === idx ? { ...d, ...patch } : d)))
+  }
+
+  function removeDep(idx: number) {
+    setDependents((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  function toggleSpouse() {
+    if (hasSpouse) {
+      setDependents((prev) =>
+        prev.filter((d) => d.relationship !== 'CONYUGE' && d.relationship !== 'UNION_HECHO')
+      )
+    } else {
+      setDependents((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          full_name: '',
+          birth_date: null,
+          identification: null,
+          relationship: 'CONYUGE',
+          has_disability: false,
+          is_active: true,
+          isNew: true,
+        },
+      ])
+    }
+  }
+
+  function addChild() {
+    setDependents((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        full_name: '',
+        birth_date: null,
+        identification: null,
+        relationship: 'HIJO',
+        has_disability: false,
+        is_active: true,
+        isNew: true,
+      },
+    ])
+  }
+
+  return (
+    <Card
+      title="Cargas familiares"
+      subtitle="Art. 6 y 7 Código de Trabajo — cálculo 5% utilidades"
+    >
+      <div className="space-y-5">
+
+        {/* Resumen y fecha de registro */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-1">
+            <div className="text-xs text-white/60">Total cargas familiares válidas</div>
+            <div className="text-2xl font-bold">{validCount}</div>
+            <div className="text-xs text-white/50">
+              Cónyuge/conviviente activo + hijos &lt;18 años + hijos con discapacidad
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Input
+              label="Fecha de registro de cargas"
+              type="date"
+              value={registeredAt ?? ''}
+              onChange={(e) => onChangeRegisteredAt(e.target.value || null)}
+            />
+            {showWarning && (
+              <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                ⚠ {pastDeadline
+                  ? 'El plazo del 30 de marzo ya venció. Registra igualmente para el próximo período.'
+                  : 'Registra las cargas antes del 30 de marzo para que apliquen al reparto de utilidades.'}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Cónyuge / conviviente */}
+        <div className="rounded-xl bg-white/5 border border-white/10 p-4 space-y-3">
+          <Toggle
+            on={hasSpouse}
+            onToggle={toggleSpouse}
+            label="Tiene cónyuge o conviviente"
+          />
+
+          {hasSpouse && spouse && (() => {
+            const spouseIdx = dependents.findIndex(
+              (d) => d.relationship === 'CONYUGE' || d.relationship === 'UNION_HECHO'
+            )
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-white/10">
+                <Input
+                  label="Nombre completo"
+                  value={spouse.full_name}
+                  onChange={(e) => updateDep(spouseIdx, { full_name: e.target.value })}
+                />
+                <Input
+                  label="Cédula"
+                  value={spouse.identification ?? ''}
+                  onChange={(e) =>
+                    updateDep(spouseIdx, {
+                      identification: e.target.value.replace(/\D+/g, '').slice(0, 10) || null,
+                    })
+                  }
+                  inputMode="numeric"
+                />
+                <div>
+                  <label className="block text-xs font-medium mb-1 text-white/60">Tipo</label>
+                  <div className="flex gap-2">
+                    {(['CONYUGE', 'UNION_HECHO'] as const).map((rel) => (
+                      <button
+                        key={rel}
+                        type="button"
+                        className={pill(spouse.relationship === rel)}
+                        onClick={() => updateDep(spouseIdx, { relationship: rel })}
+                      >
+                        {rel === 'CONYUGE' ? 'Cónyuge' : 'Unión de hecho'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
+        </div>
+
+        {/* Hijos / dependientes */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-white/80">
+              Hijos / dependientes ({children.length})
+            </p>
+            <Button variant="secondary" size="sm" onClick={addChild}>
+              + Agregar dependiente
+            </Button>
+          </div>
+
+          {children.length === 0 && (
+            <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/50 text-center">
+              No hay dependientes registrados
+            </div>
+          )}
+
+          {children.map((dep) => {
+            const globalIdx = dependents.findIndex((d) => d === dep)
+            const age       = getAge(dep.birth_date)
+            const qualifies = dep.has_disability || (age !== null && age < 18)
+
+            return (
+              <div
+                key={dep.id}
+                className="rounded-xl bg-white/5 border border-white/10 p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        dep.is_active && qualifies ? 'bg-emerald-400' : 'bg-white/20'
+                      }`}
+                    />
+                    <span className="text-sm font-medium">
+                      {dep.full_name || 'Nuevo dependiente'}
+                    </span>
+                    {age !== null && (
+                      <span className="text-xs text-white/50">{age} años</span>
+                    )}
+                    {dep.is_active && qualifies && (
+                      <span className="text-xs text-emerald-300">✓ Califica</span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeDep(globalIdx)}
+                    className="text-xs text-rose-400 hover:text-rose-300"
+                  >
+                    Eliminar
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Input
+                    label="Nombres completos"
+                    value={dep.full_name}
+                    onChange={(e) => updateDep(globalIdx, { full_name: e.target.value })}
+                  />
+                  <Input
+                    label="Fecha de nacimiento"
+                    type="date"
+                    value={dep.birth_date ?? ''}
+                    onChange={(e) =>
+                      updateDep(globalIdx, { birth_date: e.target.value || null })
+                    }
+                  />
+                  <Input
+                    label="Cédula (opcional)"
+                    value={dep.identification ?? ''}
+                    onChange={(e) =>
+                      updateDep(globalIdx, {
+                        identification: e.target.value.replace(/\D+/g, '').slice(0, 10) || null,
+                      })
+                    }
+                    inputMode="numeric"
+                  />
+                  <div className="space-y-2">
+                    <Toggle
+                      on={dep.has_disability}
+                      onToggle={() =>
+                        updateDep(globalIdx, { has_disability: !dep.has_disability })
+                      }
+                      label="Tiene discapacidad (califica sin límite de edad)"
+                    />
+                    <Toggle
+                      on={dep.is_active}
+                      onToggle={() => updateDep(globalIdx, { is_active: !dep.is_active })}
+                      label="Activo"
+                    />
+                  </div>
+                </div>
+
+                {!dep.has_disability && age !== null && age >= 18 && (
+                  <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                    ⚠ Mayor de 18 años sin discapacidad — no califica como carga familiar
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+      </div>
+    </Card>
+  )
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function EmployeeFormPage({ mode }: Props) {
@@ -396,6 +733,7 @@ export default function EmployeeFormPage({ mode }: Props) {
   const [photoPreview, setPhotoPreview] = React.useState<string | null>(null)
   const [photoCheck, setPhotoCheck]   = React.useState<{ ok: boolean; issues: string[] } | null>(null)
   const [showPass, setShowPass] = React.useState(false)
+  const [dependents, setDependents] = React.useState<DependentRow[]>([])
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 
@@ -492,6 +830,12 @@ export default function EmployeeFormPage({ mode }: Props) {
     queryFn:  () => fetchEmployeeShiftAssignment(tenantId!, id!),
   })
 
+  const dependentsQuery = useQuery({
+    queryKey: ['employee-dependents', tenantId, id],
+    enabled:  !!tenantId && !!id && isEdit,
+    queryFn:  () => fetchDependents(tenantId!, id!),
+  })
+
   // ─── Effects ──────────────────────────────────────────────────────────────
 
   React.useEffect(() => {
@@ -548,7 +892,8 @@ export default function EmployeeFormPage({ mode }: Props) {
 
       education_level:       e.education_level ?? null,
       degree_title:          e.degree_title ?? null,
-      education_institution: e.education_institution ?? null,
+      education_institution:    e.education_institution ?? null,
+      dependents_registered_at: e.dependents_registered_at ?? null,
 
       employment_status: String(e.employment_status ?? 'ACTIVE').toUpperCase() as EmployeeFormValues['employment_status'],
       vacation_start:    e.vacation_start ?? null,
@@ -602,6 +947,11 @@ export default function EmployeeFormPage({ mode }: Props) {
     if (!accessInfo.data) return
     setForm((f) => ({ ...f, access_role: accessInfo.data?.role ?? 'employee' }))
   }, [accessInfo.data])
+
+  React.useEffect(() => {
+    if (!dependentsQuery.data) return
+    setDependents(dependentsQuery.data)
+  }, [dependentsQuery.data])
 
   const setField = <K extends keyof EmployeeFormValues>(k: K, v: EmployeeFormValues[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
@@ -746,10 +1096,13 @@ export default function EmployeeFormPage({ mode }: Props) {
         disability_card_issued:   form.disability_card_issued  || null,
         disability_card_expires:  form.disability_card_expires || null,
         disability_grade:         form.disability_grade   || null,
-        education_level:          form.education_level    || null,
-        degree_title:             form.degree_title       || null,
-        education_institution:    form.education_institution || null,
+        education_level:            form.education_level    || null,
+        degree_title:               form.degree_title       || null,
+        education_institution:      form.education_institution || null,
+        dependents_registered_at:   form.dependents_registered_at || null,
       }).eq('id', employeeId).eq('tenant_id', tenantId)
+
+      await saveDependents(tenantId, employeeId, dependents)
 
       const { error: pwaSyncError } = await supabase.schema(ATT_SCHEMA).rpc('upsert_employee_pwa_self_service_settings', {
         p_employee_id:              employeeId,
@@ -819,6 +1172,7 @@ export default function EmployeeFormPage({ mode }: Props) {
       qc.invalidateQueries({ queryKey: ['employee-shift-assignment'] })
       qc.invalidateQueries({ queryKey: ['employee-pwa-settings'] })
       qc.invalidateQueries({ queryKey: ['employee-profile'] })
+      qc.invalidateQueries({ queryKey: ['employee-dependents'] })
 
       nav(`/employees/${result.id}`, { replace: true })
     },
@@ -1577,6 +1931,14 @@ export default function EmployeeFormPage({ mode }: Props) {
           </div>
         </div>
       </Card>
+
+      {/* Cargas familiares */}
+      <CargasFamiliaresSection
+        dependents={dependents}
+        setDependents={setDependents}
+        registeredAt={form.dependents_registered_at ?? null}
+        onChangeRegisteredAt={(v: string | null) => setField('dependents_registered_at', v)}
+      />
 
       {/* Sticky save button */}
       <div className="sticky bottom-4 flex justify-end z-10">

@@ -191,8 +191,8 @@ const FineConfigPage: React.FC = () => {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Configuración de Multas</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-white">Configuración de Multas</h1>
+        <p className="text-sm text-gray-400 mt-1">
           Define el método de cálculo y los parámetros por tipo de incidencia.
           El tope mensual se configura en{' '}
           <a href="/config/cira/regimen-laboral" className="text-blue-600 hover:underline">
@@ -203,25 +203,25 @@ const FineConfigPage: React.FC = () => {
 
       {/* Tabla de configuración CRUD */}
       <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-800">Reglas de Multa por Incidencia</h2>
+        <div className="px-6 py-4 border-b border-white/10">
+          <h2 className="text-base font-semibold text-white">Reglas de Multa por Incidencia</h2>
         </div>
 
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-white/5 text-left border-b border-gray-200">
-                <th className="px-4 py-3 font-medium text-gray-600">Tipo de Incidencia</th>
-                <th className="px-4 py-3 font-medium text-gray-600">Método de Cálculo</th>
-                <th className="px-4 py-3 font-medium text-gray-600">Valor</th>
-                <th className="px-4 py-3 font-medium text-gray-600">Tolerancia (min)</th>
-                <th className="px-4 py-3 font-medium text-gray-600 text-center">Activo</th>
+              <tr className="bg-white/5 text-left border-b border-white/10">
+                <th className="px-4 py-3 font-medium text-gray-400">Tipo de Incidencia</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Método de Cálculo</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Valor</th>
+                <th className="px-4 py-3 font-medium text-gray-400">Tolerancia (min)</th>
+                <th className="px-4 py-3 font-medium text-gray-400 text-center">Activo</th>
               </tr>
             </thead>
             <tbody>
               {configs.map((cfg) => (
-                <tr key={cfg.incident_type} className="border-b border-gray-100 hover:bg-white/5">
-                  <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                <tr key={cfg.incident_type} className="border-b border-white/10 hover:bg-white/5">
+                  <td className="px-4 py-3 font-medium text-gray-200 whitespace-nowrap">
                     {INCIDENT_TYPE_LABELS[cfg.incident_type]}
                   </td>
                   <td className="px-4 py-3">
@@ -230,7 +230,7 @@ const FineConfigPage: React.FC = () => {
                       onChange={(e) =>
                         handleChange(cfg.incident_type, 'calc_method', e.target.value as CalcMethod)
                       }
-                      className="w-full p-1.5 border border-gray-300 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      className="w-full p-1.5 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     >
                       {(Object.entries(CALC_METHOD_LABELS) as [CalcMethod, string][]).map(([m, label]) => (
                         <option key={m} value={m}>{label}</option>
@@ -246,7 +246,7 @@ const FineConfigPage: React.FC = () => {
                       onChange={(e) =>
                         handleChange(cfg.incident_type, 'value', parseFloat(e.target.value) || 0)
                       }
-                      className="w-24 p-1.5 border border-gray-300 rounded-lg text-sm font-mono bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      className="w-24 p-1.5 border border-white/10 rounded-lg text-sm font-mono bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     />
                   </td>
                   <td className="px-4 py-3">
@@ -259,7 +259,7 @@ const FineConfigPage: React.FC = () => {
                       onChange={(e) =>
                         handleChange(cfg.incident_type, 'grace_minutes', parseInt(e.target.value) || 0)
                       }
-                      className="w-20 p-1.5 border border-gray-300 rounded-lg text-sm font-mono bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                      className="w-20 p-1.5 border border-white/10 rounded-lg text-sm font-mono bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
                     />
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -269,7 +269,7 @@ const FineConfigPage: React.FC = () => {
                       onChange={(e) =>
                         handleChange(cfg.incident_type, 'is_active', e.target.checked)
                       }
-                      className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="w-4 h-4 rounded border-white/10 text-blue-600 focus:ring-blue-500"
                     />
                   </td>
                 </tr>
@@ -278,7 +278,7 @@ const FineConfigPage: React.FC = () => {
           </table>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 bg-white/5 flex items-center justify-between gap-4">
+        <div className="px-6 py-4 border-t border-white/10 bg-white/5 flex items-center justify-between gap-4">
           <p className="text-xs text-gray-400">
             Tolerancia: minutos de gracia antes de aplicar la multa.
             Valor: USD por minuto, monto fijo, o factor sobre HB (Sueldo ÷ 240).
@@ -295,39 +295,39 @@ const FineConfigPage: React.FC = () => {
 
       {/* Historial fine_ledger (readonly) */}
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-1">Historial de Multas Aplicadas</h2>
+        <h2 className="text-lg font-semibold text-white mb-1">Historial de Multas Aplicadas</h2>
         <p className="text-xs text-gray-400 mb-4">Últimas 50 multas registradas. Solo lectura.</p>
 
         {ledgerPending ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-6 py-5 text-sm text-amber-700">
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-6 py-5 text-sm text-amber-300">
             La tabla{' '}
-            <code className="font-mono text-xs bg-amber-100 px-1 rounded">
+            <code className="font-mono text-xs bg-amber-500/20 px-1 rounded">
               attendance.fine_ledger
             </code>{' '}
             aún no existe. Se creará en la Sesión C-4 del roadmap CIRA V2.0.
           </div>
         ) : ledger.length === 0 ? (
-          <div className="bg-white/5 border border-gray-200 rounded-xl px-6 py-8 text-center text-sm text-gray-400">
+          <div className="bg-white/5 border border-white/10 rounded-xl px-6 py-8 text-center text-sm text-gray-400">
             No hay multas registradas aún.
           </div>
         ) : (
           <div className="overflow-x-auto bg-white/5 rounded-xl border border-white/10">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-white/5 text-left border-b border-gray-200">
-                  <th className="px-4 py-3 font-medium text-gray-600">Fecha</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">Empleado</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">Tipo</th>
-                  <th className="px-4 py-3 font-medium text-gray-600">Periodo</th>
-                  <th className="px-4 py-3 font-medium text-gray-600 text-right">Calculado</th>
-                  <th className="px-4 py-3 font-medium text-gray-600 text-right">Aplicado</th>
-                  <th className="px-4 py-3 font-medium text-gray-600 text-center">Capado</th>
+                <tr className="bg-white/5 text-left border-b border-white/10">
+                  <th className="px-4 py-3 font-medium text-gray-400">Fecha</th>
+                  <th className="px-4 py-3 font-medium text-gray-400">Empleado</th>
+                  <th className="px-4 py-3 font-medium text-gray-400">Tipo</th>
+                  <th className="px-4 py-3 font-medium text-gray-400">Periodo</th>
+                  <th className="px-4 py-3 font-medium text-gray-400 text-right">Calculado</th>
+                  <th className="px-4 py-3 font-medium text-gray-400 text-right">Aplicado</th>
+                  <th className="px-4 py-3 font-medium text-gray-400 text-center">Capado</th>
                 </tr>
               </thead>
               <tbody>
                 {ledger.map((entry) => (
-                  <tr key={entry.id} className="border-b border-gray-100 hover:bg-white/5">
-                    <td className="px-4 py-2 text-gray-700">{entry.incident_date}</td>
+                  <tr key={entry.id} className="border-b border-white/10 hover:bg-white/5">
+                    <td className="px-4 py-2 text-gray-300">{entry.incident_date}</td>
                     <td className="px-4 py-2 font-mono text-xs text-gray-400">
                       {entry.employee_id.slice(0, 8)}…
                     </td>
@@ -343,11 +343,11 @@ const FineConfigPage: React.FC = () => {
                     </td>
                     <td className="px-4 py-2 text-center">
                       {entry.was_capped ? (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300">
                           Sí +${entry.cap_excess.toFixed(2)}
                         </span>
                       ) : (
-                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-500">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-400">
                           No
                         </span>
                       )}

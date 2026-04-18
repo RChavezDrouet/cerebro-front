@@ -1,113 +1,66 @@
-import { useNavigate } from 'react-router-dom'
-import {
-  CalendarDays,
-  Play,
-  FileText,
-  Users,
-  CreditCard,
-  BarChart2,
-  ChevronRight,
-} from 'lucide-react'
+import { Link } from "react-router-dom";
+import { CalendarDays, PlayCircle, Wallet } from "lucide-react";
 
-interface PayrollCard {
-  icon: React.ReactNode
-  title: string
-  description: string
-  path: string
-  color: string
-  textColor: string
-  badge?: string
-}
-
-const cards: PayrollCard[] = [
+const cards = [
   {
-    icon: <CalendarDays className="w-6 h-6" />,
-    title: 'Períodos de Nómina',
-    description: 'Crea y administra períodos mensuales de liquidación.',
-    path: '/payroll/periods',
-    color: 'bg-blue-50 border-blue-200',
-    textColor: 'text-blue-700',
+    title: "Períodos",
+    description: "Administra períodos mensuales, quincenales, semanales o especiales.",
+    to: "/payroll/periods",
+    icon: CalendarDays,
   },
   {
-    icon: <Play className="w-6 h-6" />,
-    title: 'Ejecuciones (Runs)',
-    description: 'Calcula, revisa y cierra corridas de nómina por período.',
-    path: '/payroll/runs',
-    color: 'bg-emerald-50 border-emerald-200',
-    textColor: 'text-emerald-700',
+    title: "Ejecuciones",
+    description: "Crea corridas, calcula nómina y aplica novedades por período.",
+    to: "/payroll/runs",
+    icon: PlayCircle,
   },
-  {
-    icon: <FileText className="w-6 h-6" />,
-    title: 'Conceptos',
-    description: 'Catálogo de ingresos, deducciones, provisiones y contribuciones patronales.',
-    path: '/payroll/concepts',
-    color: 'bg-violet-50 border-violet-200',
-    textColor: 'text-violet-700',
-    badge: 'Próximamente',
-  },
-  {
-    icon: <Users className="w-6 h-6" />,
-    title: 'Colaboradores',
-    description: 'Perfiles de nómina, salarios base, datos IESS y SRI por empleado.',
-    path: '/payroll/collaborators',
-    color: 'bg-amber-50 border-amber-200',
-    textColor: 'text-amber-700',
-    badge: 'Próximamente',
-  },
-  {
-    icon: <CreditCard className="w-6 h-6" />,
-    title: 'Préstamos y Anticipos',
-    description: 'Gestiona préstamos internos y anticipos de sueldo con descuento automático.',
-    path: '/payroll/loans',
-    color: 'bg-rose-50 border-rose-200',
-    textColor: 'text-rose-700',
-    badge: 'Próximamente',
-  },
-  {
-    icon: <BarChart2 className="w-6 h-6" />,
-    title: 'Exportaciones',
-    description: 'Genera archivos para el IESS (planilla) y el SRI (formulario 107).',
-    path: '/payroll/exports',
-    color: 'bg-cyan-50 border-cyan-200',
-    textColor: 'text-cyan-700',
-    badge: 'Próximamente',
-  },
-]
+];
 
 export default function PayrollHomePage() {
-  const navigate = useNavigate()
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="mx-auto max-w-6xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Nómina</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Liquidación mensual, cálculo de IESS, impuesto a la renta, provisiones y exportaciones legales.
+        <h1 className="text-2xl font-bold text-white">Nómina</h1>
+        <p className="mt-1 text-sm text-white/40">
+          Módulo de administración de períodos, ejecuciones y resultados de nómina.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {cards.map((c) => (
-          <button
-            key={c.path}
-            onClick={() => navigate(c.path)}
-            className={`w-full flex items-center gap-4 p-5 rounded-2xl border ${c.color} hover:shadow-md transition-all text-left group`}
-          >
-            <div className={`${c.textColor} flex-shrink-0`}>{c.icon}</div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold text-gray-900 text-sm">{c.title}</span>
-                {c.badge && (
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${c.textColor} ${c.color} border`}>
-                    {c.badge}
-                  </span>
-                )}
+      <div className="grid gap-6 md:grid-cols-2">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <Link
+              key={card.to}
+              to={card.to}
+              className="group rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition-all hover:border-blue-500/40 hover:bg-white/[0.05]"
+            >
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-500/15 text-blue-300">
+                <Icon className="h-6 w-6" />
               </div>
-              <p className="text-xs text-gray-500 mt-0.5">{c.description}</p>
-            </div>
-            <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 group-hover:text-gray-600 transition-colors" />
-          </button>
-        ))}
+              <h2 className="text-lg font-semibold text-white">{card.title}</h2>
+              <p className="mt-2 text-sm text-white/50">{card.description}</p>
+              <div className="mt-4 text-sm font-medium text-blue-400 group-hover:text-blue-300">
+                Abrir módulo
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
+            <Wallet className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="text-base font-semibold text-white">Estado del backend</h3>
+            <p className="text-sm text-white/45">
+              Ya están operativas las funciones de cálculo, aplicación de novedades y resumen.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
-  )
+  );
 }

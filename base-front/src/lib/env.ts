@@ -27,6 +27,7 @@ export const ENV = {
   // Obligatorias
   SUPABASE_URL: () => mustGetEnv('VITE_SUPABASE_URL'),
   SUPABASE_ANON_KEY: () => mustGetEnv('VITE_SUPABASE_ANON_KEY'),
+  IS_PRODUCTION: Boolean(import.meta.env.PROD),
 
   // Cerebro (se usará después para gate real)
   TENANTS_TABLE: getEnv('VITE_TENANTS_TABLE') ?? 'tenants',

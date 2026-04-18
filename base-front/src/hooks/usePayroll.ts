@@ -1,4 +1,3 @@
-// src/hooks/usePayroll.ts
 import { useCallback, useEffect, useState } from "react";
 import {
   payrollService,
@@ -46,39 +45,45 @@ export function usePayroll() {
     }
   }, []);
 
-  const calculateRun = useCallback(async (runId: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      await payrollService.calculateRun(runId);
-      const data = await payrollService.getSummary(runId);
-      setSummary(data);
-      await loadBaseData();
-      return data;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo calcular la corrida.");
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [loadBaseData]);
+  const calculateRun = useCallback(
+    async (runId: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        await payrollService.calculateRun(runId);
+        const data = await payrollService.getSummary(runId);
+        setSummary(data);
+        await loadBaseData();
+        return data;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "No se pudo calcular la corrida.");
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loadBaseData]
+  );
 
-  const applyNovelties = useCallback(async (runId: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      await payrollService.applyNovelties(runId);
-      const data = await payrollService.getSummary(runId);
-      setSummary(data);
-      await loadBaseData();
-      return data;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudieron aplicar novedades.");
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [loadBaseData]);
+  const applyNovelties = useCallback(
+    async (runId: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        await payrollService.applyNovelties(runId);
+        const data = await payrollService.getSummary(runId);
+        setSummary(data);
+        await loadBaseData();
+        return data;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "No se pudieron aplicar novedades.");
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loadBaseData]
+  );
 
   useEffect(() => {
     void loadBaseData();

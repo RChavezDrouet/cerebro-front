@@ -195,22 +195,22 @@ const AttendanceReportCiraPage: React.FC = () => {
 
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Reporte de Asistencia CIRA</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <h1 className="text-2xl font-bold text-white">Reporte de Asistencia CIRA</h1>
+        <p className="text-sm text-gray-400 mt-1">
           Resumen diario, registro de multas y acumulados legales por empleado.
         </p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+      <div className="flex gap-1 bg-white/10 rounded-lg p-1 w-fit">
         {TABS.map(tab => (
           <button
             key={tab.value}
             onClick={() => setActiveTab(tab.value)}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
               activeTab === tab.value
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-white/15 text-white shadow-sm'
+                : 'text-gray-400 hover:text-white'
             }`}
           >
             {tab.label}
@@ -222,12 +222,12 @@ const AttendanceReportCiraPage: React.FC = () => {
       {activeTab === 'summary' && (
         <div className="space-y-4">
           <div className="flex items-center gap-3 flex-wrap">
-            <label className="text-sm font-medium text-gray-700">Fecha</label>
+            <label className="text-sm font-medium text-gray-300">Fecha</label>
             <input
               type="date"
               value={selectedDate}
               onChange={e => setSelectedDate(e.target.value)}
-              className="p-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="p-1.5 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
             {loadingSummary && (
               <span className="text-xs text-gray-400 animate-pulse">Cargando…</span>
@@ -255,38 +255,38 @@ const AttendanceReportCiraPage: React.FC = () => {
           </div>
 
           {!loadingSummary && punches.length === 0 ? (
-            <div className="bg-gray-50 border border-gray-200 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
+            <div className="bg-white/5 border border-white/10 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
               No hay marcaciones para el {selectedDate}.
             </div>
           ) : (
-            <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
+            <div className="overflow-x-auto bg-white/5 rounded-xl border border-white/10">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-left border-b border-gray-200">
-                    <th className="px-4 py-3 font-medium text-gray-600">Empleado</th>
-                    <th className="px-4 py-3 font-medium text-gray-600">Hora</th>
-                    <th className="px-4 py-3 font-medium text-gray-600">Tipo</th>
-                    <th className="px-4 py-3 font-medium text-gray-600">Fuente</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 text-right">
+                  <tr className="bg-white/5 text-left border-b border-white/10">
+                    <th className="px-4 py-3 font-medium text-gray-400">Empleado</th>
+                    <th className="px-4 py-3 font-medium text-gray-400">Hora</th>
+                    <th className="px-4 py-3 font-medium text-gray-400">Tipo</th>
+                    <th className="px-4 py-3 font-medium text-gray-400">Fuente</th>
+                    <th className="px-4 py-3 font-medium text-gray-400 text-right">
                       Horas calc. <span className="text-gray-400 font-normal">(C-3)</span>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   {punches.map(row => (
-                    <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-800 whitespace-nowrap">
+                    <tr key={row.id} className="border-b border-white/10 hover:bg-white/5">
+                      <td className="px-4 py-3 font-medium text-gray-200 whitespace-nowrap">
                         {employeeName(row)}
                       </td>
-                      <td className="px-4 py-3 font-mono text-gray-700">
+                      <td className="px-4 py-3 font-mono text-gray-300">
                         {fmtTime(row.punched_at)}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                        <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-400">
                           {row.marking_type ?? '—'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-500">
+                      <td className="px-4 py-3 text-gray-400">
                         {SOURCE_LABELS[row.source] ?? row.source}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-300 text-xs">
@@ -305,12 +305,12 @@ const AttendanceReportCiraPage: React.FC = () => {
       {activeTab === 'fines' && (
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-700">Mes</label>
+            <label className="text-sm font-medium text-gray-300">Mes</label>
             <input
               type="month"
               value={selectedMonth}
               onChange={e => setSelectedMonth(e.target.value)}
-              className="p-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="p-1.5 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
             {loadingFines && (
               <span className="text-xs text-gray-400 animate-pulse">Cargando…</span>
@@ -318,34 +318,34 @@ const AttendanceReportCiraPage: React.FC = () => {
           </div>
 
           {finesPending ? (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-6 py-5 text-sm text-amber-700">
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-6 py-5 text-sm text-amber-300">
               La tabla{' '}
-              <code className="font-mono text-xs bg-amber-100 px-1 rounded">
+              <code className="font-mono text-xs bg-amber-500/20 px-1 rounded">
                 attendance.fine_ledger
               </code>{' '}
               aún no existe. Se creará en la Sesión C-4 del roadmap CIRA V2.0.
             </div>
           ) : !loadingFines && fines.length === 0 ? (
-            <div className="bg-gray-50 border border-gray-200 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
+            <div className="bg-white/5 border border-white/10 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
               No hay multas registradas para {selectedMonth}.
             </div>
           ) : (
-            <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
+            <div className="overflow-x-auto bg-white/5 rounded-xl border border-white/10">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-left border-b border-gray-200">
-                    <th className="px-4 py-3 font-medium text-gray-600">Fecha</th>
-                    <th className="px-4 py-3 font-medium text-gray-600">Empleado</th>
-                    <th className="px-4 py-3 font-medium text-gray-600">Tipo</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 text-right">Calculado</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 text-right">Aplicado</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 text-center">Capado</th>
+                  <tr className="bg-white/5 text-left border-b border-white/10">
+                    <th className="px-4 py-3 font-medium text-gray-400">Fecha</th>
+                    <th className="px-4 py-3 font-medium text-gray-400">Empleado</th>
+                    <th className="px-4 py-3 font-medium text-gray-400">Tipo</th>
+                    <th className="px-4 py-3 font-medium text-gray-400 text-right">Calculado</th>
+                    <th className="px-4 py-3 font-medium text-gray-400 text-right">Aplicado</th>
+                    <th className="px-4 py-3 font-medium text-gray-400 text-center">Capado</th>
                   </tr>
                 </thead>
                 <tbody>
                   {fines.map(row => (
-                    <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-700">{row.incident_date}</td>
+                    <tr key={row.id} className="border-b border-white/10 hover:bg-white/5">
+                      <td className="px-4 py-3 text-gray-300">{row.incident_date}</td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-400">
                         {row.employee_id.slice(0, 8)}…
                       </td>
@@ -360,11 +360,11 @@ const AttendanceReportCiraPage: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-center">
                         {row.was_capped ? (
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-amber-500/20 text-amber-300">
                             Sí +${row.cap_excess.toFixed(2)}
                           </span>
                         ) : (
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-400">
                             No
                           </span>
                         )}
@@ -382,12 +382,12 @@ const AttendanceReportCiraPage: React.FC = () => {
       {activeTab === 'accruals' && (
         <div className="space-y-4">
           <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-700">Mes</label>
+            <label className="text-sm font-medium text-gray-300">Mes</label>
             <input
               type="month"
               value={selectedMonth}
               onChange={e => setSelectedMonth(e.target.value)}
-              className="p-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              className="p-1.5 border border-white/10 rounded-lg text-sm bg-white/5 text-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
             />
             {loadingOvertime && (
               <span className="text-xs text-gray-400 animate-pulse">Cargando…</span>
@@ -395,51 +395,51 @@ const AttendanceReportCiraPage: React.FC = () => {
           </div>
 
           {overtimePending ? (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl px-6 py-5 text-sm text-amber-700">
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-6 py-5 text-sm text-amber-300">
               La tabla{' '}
-              <code className="font-mono text-xs bg-amber-100 px-1 rounded">
+              <code className="font-mono text-xs bg-amber-500/20 px-1 rounded">
                 attendance.overtime_ledger
               </code>{' '}
               aún no existe. Se creará en la Sesión C-7 del roadmap CIRA V2.0.
             </div>
           ) : !loadingOvertime && overtime.length === 0 ? (
-            <div className="bg-gray-50 border border-gray-200 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
+            <div className="bg-white/5 border border-white/10 rounded-xl px-6 py-10 text-center text-sm text-gray-400">
               No hay acumulados registrados para {selectedMonth}.
             </div>
           ) : (
-            <div className="overflow-x-auto bg-white rounded-xl border border-gray-200">
+            <div className="overflow-x-auto bg-white/5 rounded-xl border border-white/10">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="bg-gray-50 text-left border-b border-gray-200">
-                    <th className="px-4 py-3 font-medium text-gray-600">Fecha</th>
-                    <th className="px-4 py-3 font-medium text-gray-600">Empleado</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 text-right">H. Normal</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 text-right">H. Suplem.</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 text-right">H. Extra</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 text-right">Total USD</th>
-                    <th className="px-4 py-3 font-medium text-gray-600 text-center">Pagado</th>
+                  <tr className="bg-white/5 text-left border-b border-white/10">
+                    <th className="px-4 py-3 font-medium text-gray-400">Fecha</th>
+                    <th className="px-4 py-3 font-medium text-gray-400">Empleado</th>
+                    <th className="px-4 py-3 font-medium text-gray-400 text-right">H. Normal</th>
+                    <th className="px-4 py-3 font-medium text-gray-400 text-right">H. Suplem.</th>
+                    <th className="px-4 py-3 font-medium text-gray-400 text-right">H. Extra</th>
+                    <th className="px-4 py-3 font-medium text-gray-400 text-right">Total USD</th>
+                    <th className="px-4 py-3 font-medium text-gray-400 text-center">Pagado</th>
                   </tr>
                 </thead>
                 <tbody>
                   {overtime.map(row => (
-                    <tr key={row.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-700">{row.period_date}</td>
+                    <tr key={row.id} className="border-b border-white/10 hover:bg-white/5">
+                      <td className="px-4 py-3 text-gray-300">{row.period_date}</td>
                       <td className="px-4 py-3 font-mono text-xs text-gray-400">
                         {row.employee_id.slice(0, 8)}…
                       </td>
                       <td className="px-4 py-3 text-right font-mono">{row.normal_hours}h</td>
                       <td className="px-4 py-3 text-right font-mono">{row.suplem_hours}h</td>
                       <td className="px-4 py-3 text-right font-mono">{row.extra_hours}h</td>
-                      <td className="px-4 py-3 text-right font-mono font-medium text-gray-800">
+                      <td className="px-4 py-3 text-right font-mono font-medium text-gray-200">
                         ${row.total_amount.toFixed(2)}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {row.is_paid ? (
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/20 text-green-300">
                             Sí
                           </span>
                         ) : (
-                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500">
+                          <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-white/10 text-gray-400">
                             No
                           </span>
                         )}

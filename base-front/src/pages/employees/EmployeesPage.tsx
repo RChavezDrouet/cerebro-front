@@ -249,13 +249,13 @@ export default function EmployeesPage() {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Empleados</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--color-text)' }}>Colaboradores</h1>
           <p className="mt-1 text-sm" style={{ color: 'var(--color-muted)' }}>
             {emp.data ? `${emp.data.length} empleado${emp.data.length !== 1 ? 's' : ''} registrados` : 'Gestión del personal'}
           </p>
         </div>
         <Link to="/employees/new">
-          <Button leftIcon={<Plus size={16} />}>Nuevo empleado</Button>
+          <Button leftIcon={<Plus size={16} />}>Nuevo colaborador</Button>
         </Link>
       </div>
 
