@@ -19,10 +19,10 @@ type Employee = {
 
 type Punch = {
   id:          string
-  employee_id: string
+  employee_id: string | null
   punched_at:  string
   meta:        Record<string, unknown> | null   // jsonb; marking type lives in meta->>'type'
-  source:      string
+  source:      string | null
   employee:    { first_name: string; last_name: string; employee_code: string } | null
 }
 
@@ -43,7 +43,7 @@ type OvertimeRequest = {
   requested_date:     string
   hours_requested:    number
   hour_type:          'SUPLEMENTARIA' | 'EXTRAORDINARIA'
-  justification:      string
+  justification:      string | null
   status:             'pending' | 'approved' | 'rejected' | 'compensated'
   compensate_as_time: boolean
   reviewed_by:        string | null
@@ -166,11 +166,29 @@ function monthEnd(year: number, month: number) {
   const last = new Date(year, month, 0).getDate()
   return `${year}-${String(month).padStart(2,'0')}-${String(last).padStart(2,'0')}`
 }
-function empName(employees: Employee[], id: string) {
-  const e = employees.find(x => x.id === id)
-  return e ? `${e.last_name}, ${e.first_name}` : id.slice(0, 8) + '…'
+function safeShortId(value: string | null | undefined, length = 8): string {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!text) return '—'
+  return text.length > length ? `${text.slice(0, length)}…` : text
 }
-function empCode(employees: Employee[], id: string) {
+function safePreviewText(value: string | null | undefined, maxLength: number, fallback = '—'): string {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (!text) return fallback
+  return text.length > maxLength ? `${text.slice(0, maxLength)}…` : text
+}
+function safeJsonPreview(value: unknown, maxLength: number): string {
+  try {
+    const text = JSON.stringify(value)
+    return text ? safePreviewText(text, maxLength) : '—'
+  } catch {
+    return '—'
+  }
+}
+function empName(employees: Employee[], id: string | null | undefined) {
+  const e = employees.find(x => x.id === id)
+  return e ? `${e.last_name}, ${e.first_name}` : safeShortId(id)
+}
+function empCode(employees: Employee[], id: string | null | undefined) {
   return employees.find(x => x.id === id)?.employee_code ?? '—'
 }
 function initials(emp: Employee) {
@@ -446,8 +464,12 @@ const ReportesPage: React.FC = () => {
       // Step 3 — merge in JS
       const empMap = new Map((empData ?? []).map(e => [e.id, e]))
       const rows = (punchData ?? []).map(p => ({
-        ...p,
-        employee: empMap.get(p.employee_id) ?? null,
+        id: String(p.id),
+        employee_id: p.employee_id ?? null,
+        punched_at: p.punched_at ?? '',
+        meta: p.meta ?? null,
+        source: p.source ?? null,
+        employee: empMap.get(p.employee_id ?? '') ?? null,
       }))
       setPunches(rows as unknown as Punch[])
     } catch { toast.error('Error al cargar marcaciones') }
@@ -482,8 +504,12 @@ const ReportesPage: React.FC = () => {
       // Step 3 — merge in JS
       const empMap = new Map((empData ?? []).map(e => [e.id, e]))
       const rows = (punchData ?? []).map(p => ({
-        ...p,
-        employee: empMap.get(p.employee_id) ?? null,
+        id: String(p.id),
+        employee_id: p.employee_id ?? null,
+        punched_at: p.punched_at ?? '',
+        meta: p.meta ?? null,
+        source: p.source ?? null,
+        employee: empMap.get(p.employee_id ?? '') ?? null,
       }))
       setMonthPunches(rows as unknown as Punch[])
     } catch { toast.error('Error al cargar datos del mes') }
@@ -504,8 +530,9 @@ const ReportesPage: React.FC = () => {
 
     const byEmp = new Map<string, Punch[]>()
     for (const p of monthPunches) {
-      const arr = byEmp.get(p.employee_id) ?? []; arr.push(p)
-      byEmp.set(p.employee_id, arr)
+      const empId = p.employee_id ?? ''
+      const arr = byEmp.get(empId) ?? []; arr.push(p)
+      byEmp.set(empId, arr)
     }
     const result: EmpSummary[] = []
     for (const [empId, emP] of byEmp) {
@@ -723,7 +750,7 @@ const ReportesPage: React.FC = () => {
       ['Fecha','Hora','Empleado','Código','Tipo','Fuente'],
       ...punches.map(p => [
         fmtDate(p.punched_at), fmtTime(p.punched_at),
-        p.employee ? `${p.employee.last_name}, ${p.employee.first_name}` : p.employee_id.slice(0,8),
+        p.employee ? `${p.employee.last_name}, ${p.employee.first_name}` : safeShortId(p.employee_id),
         p.employee?.employee_code ?? '',
         MARKING_LABELS[metaType(p)] ?? (metaType(p) || '—'),
         sourceLabel(p),
@@ -868,7 +895,7 @@ const ReportesPage: React.FC = () => {
                           <td className="px-4 py-2 text-white whitespace-nowrap">
                             {p.employee
                               ? `${p.employee.last_name}, ${p.employee.first_name}`
-                              : <span className="font-mono text-xs text-white/40">{p.employee_id.slice(0,8)}…</span>}
+                              : <span className="font-mono text-xs text-white/40">{safeShortId(p.employee_id)}</span>}
                           </td>
                           <td className="px-4 py-2 font-mono text-xs text-white/50">{p.employee?.employee_code ?? '—'}</td>
                           <td className="px-4 py-2">
@@ -1041,12 +1068,12 @@ const ReportesPage: React.FC = () => {
                           <td className="px-4 py-2.5 font-mono text-white text-right">{r.hours_requested}h</td>
                           <td className="px-4 py-2.5 text-right text-xs text-white/30" title="Disponible en C-3">—</td>
                           <td className="px-4 py-2.5 text-white/60 max-w-[160px]">
-                            <span title={r.justification}>
-                              {r.justification.length > 45 ? r.justification.slice(0,45)+'…' : r.justification}
+                            <span title={r.justification ?? 'Sin dato'}>
+                              {safePreviewText(r.justification, 45, 'Sin dato')}
                             </span>
                             {r.review_note && (
                               <p className="text-xs text-white/30 italic mt-0.5">
-                                ↳ {r.review_note.length > 35 ? r.review_note.slice(0,35)+'…' : r.review_note}
+                                ↳ {safePreviewText(r.review_note, 35)}
                               </p>
                             )}
                           </td>
@@ -1124,7 +1151,7 @@ const ReportesPage: React.FC = () => {
                             {v.income_base_usd != null ? `$${v.income_base_usd.toFixed(2)}` : '—'}
                           </td>
                           <td className="px-4 py-2.5 text-xs text-white/50 max-w-[150px]">
-                            {v.notes ? <span title={v.notes}>{v.notes.length > 38 ? v.notes.slice(0,38)+'…' : v.notes}</span>
+                            {v.notes ? <span title={v.notes}>{safePreviewText(v.notes, 38)}</span>
                               : <span className="text-white/20">—</span>}
                           </td>
                         </tr>
@@ -1299,8 +1326,8 @@ const ReportesPage: React.FC = () => {
                           <td className="px-4 py-2.5 text-xs text-white/50">{n.detected_by ?? '—'}</td>
                           <td className="px-4 py-2.5 text-xs text-white/40 max-w-[200px]">
                             {n.details ? (
-                              <span title={JSON.stringify(n.details)}>
-                                {JSON.stringify(n.details).slice(0, 60)}…
+                              <span title={safeJsonPreview(n.details, 120)}>
+                                {safeJsonPreview(n.details, 60)}
                               </span>
                             ) : '—'}
                           </td>
