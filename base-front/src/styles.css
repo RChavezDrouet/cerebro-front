@@ -2,38 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Variables globales ──────────────────────────────────────────────────── */
+/* â”€â”€â”€ Variables globales â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 :root {
   /* Fondo y superficies */
-  --bg:              #0b1220;
-  --color-bg:        #0b1220;
-  --color-surface:   rgba(255,255,255,0.06);
-  --color-sidebar:   #0F2744;
-  --color-header:    #0D1B2A;
-  --card:            rgba(255,255,255,0.06);
+  --bg:               #0b1220;
+  --color-bg:         #0b1220;
+  --color-surface:    rgba(255,255,255,0.06);
+  --color-sidebar:    #0F2744;
+  --color-header:     #0D1B2A;
+  --card:             rgba(255,255,255,0.06);
+  --surface:          var(--color-surface);
+  --surface-elevated: var(--card);
+  --surface-glass:    var(--color-surface);
 
   /* Texto */
-  --text:            rgba(255,255,255,0.92);
-  --muted:           rgba(255,255,255,0.60);
-  --color-text:      rgba(255,255,255,0.92);
-  --color-muted:     rgba(255,255,255,0.60);
+  --text:             rgba(255,255,255,0.92);
+  --muted:            rgba(255,255,255,0.60);
+  --color-text:       rgba(255,255,255,0.92);
+  --color-muted:      rgba(255,255,255,0.60);
+  --text-primary:     var(--color-text);
+  --text-secondary:   var(--text);
+  --text-muted:       var(--color-muted);
 
   /* Bordes */
-  --border:          rgba(255,255,255,0.12);
-  --color-border:    rgba(255,255,255,0.12);
+  --border:           rgba(255,255,255,0.12);
+  --color-border:     rgba(255,255,255,0.12);
+  --border-subtle:    var(--color-border);
+  --border-strong:    var(--border);
 
   /* Colores de marca */
-  --primary:         #6d28d9;
-  --color-primary:   #6d28d9;
-  --color-secondary: #38bdf8;
-  --color-accent:    #7C3AED;
+  --primary:          #6d28d9;
+  --color-primary:    #6d28d9;
+  --color-secondary:  #38bdf8;
+  --color-accent:     #7C3AED;
   --color-on-primary: #FFFFFF;
+  --accent-primary:   var(--color-primary);
+  --accent-secondary:  var(--color-accent);
 
-  /* Semánticos */
-  --danger:          #ef4444;
+  /* SemÃ¡nticos */
+  --danger:           #ef4444;
+  --success:          #22c55e;
+  --warning:          #f59e0b;
+  --info:             #38bdf8;
 }
 
-/* ─── Tema claro (futuro) ─────────────────────────────────────────────────── */
+/* â”€â”€â”€ Tema claro (futuro) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .theme-light {
   --bg:            #F8FAFC;
   --color-bg:      #F8FAFC;
@@ -47,7 +60,7 @@
   --color-muted:   #64748B;
 }
 
-/* ─── Base ────────────────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 * { box-sizing: border-box; }
 
 html, body { height: 100%; }
@@ -65,22 +78,38 @@ body {
   transition: background 0.3s ease, color 0.3s ease;
 }
 
-/* ─── Utilidades de componentes ───────────────────────────────────────────── */
+/* â”€â”€â”€ Utilidades de componentes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .card {
-  background: var(--card);
-  border: 1px solid var(--color-border);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
   border-radius: 1rem;
 }
 
-.glass { backdrop-filter: blur(10px); }
+.glass {
+  background: var(--surface-glass);
+  border: 1px solid var(--border-subtle);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
 
 .btn-primary {
-  background: var(--color-primary);
+  background: var(--accent-primary);
   color: var(--color-on-primary);
 }
 .btn-primary:hover { filter: brightness(1.1); }
 
-/* ─── Animaciones ─────────────────────────────────────────────────────────── */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a[href]:focus-visible,
+[role="button"]:focus-visible,
+[tabindex]:not([tabindex="-1"]):focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* â”€â”€â”€ Animaciones â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .animate-fade-in    { animation: fadeIn   0.3s ease-out; }
 .animate-slide-up   { animation: slideUp  0.4s ease-out; }
 .animate-shake      { animation: shake    0.4s ease; }
@@ -90,17 +119,17 @@ body {
 @keyframes slideUp { from { opacity: 0; transform: translateY(16px) } to { opacity: 1; transform: translateY(0) } }
 @keyframes shake   { 0%,100% { transform: translateX(0) } 25% { transform: translateX(-6px) } 75% { transform: translateX(6px) } }
 
-/* ─── Scrollbar ───────────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Scrollbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 ::-webkit-scrollbar        { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track  { background: transparent; }
 ::-webkit-scrollbar-thumb  { background: rgba(255,255,255,0.12); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.18); }
 
-/* ─── Selects legibles en Windows/Chrome ──────────────────────────────────── */
+/* â”€â”€â”€ Selects legibles en Windows/Chrome â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 select                       { color: #ffffff; background-color: rgba(15,23,42,0.9); }
 select option, select optgroup { color: #ffffff; background-color: #0f172a; }
 select option:checked,
 select option:hover          { color: #ffffff; background-color: #1e293b; }
 
-/* ─── Campos sin paste ────────────────────────────────────────────────────── */
+/* â”€â”€â”€ Campos sin paste â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 input[data-no-paste="true"] { user-select: none; -webkit-user-select: none; }

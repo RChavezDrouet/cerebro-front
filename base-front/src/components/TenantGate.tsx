@@ -1,20 +1,20 @@
 /**
  * ============================================================
- * Base PWA â€” TenantGate.tsx
+ * Base PWA  TenantGate.tsx
  * ============================================================
- * Guard que se ejecuta DESPUÃ‰S del login exitoso de Supabase.
+ * Guard que se ejecuta DESPUS del login exitoso de Supabase.
  *
  * Responsabilidades:
  *  1. Resolver el tenant_id del empleado logueado.
- *  2. Consultar en CEREBRO (schema public) si la empresa estÃ¡ activa.
- *  3. Si estÃ¡ pausada/suspendida â†’ obtener el mensaje configurado en
+ *  2. Consultar en CEREBRO (schema public) si la empresa está activa.
+ *  3. Si está pausada/suspendida → obtener el mensaje configurado en
  *     CEREBRO (app_settings.paused_message_title/body) y mostrarlo
  *     en un modal bloqueante sin dejar pasar.
- *  4. Si estÃ¡ activa â†’ renderizar children normalmente.
+ *  4. Si está activa → renderizar children normalmente.
  *
  * Puntos de contacto con CEREBRO (solo lectura):
- *  - public.tenants         â†’ status, is_suspended
- *  - public.app_settings    â†’ paused_message_title, paused_message_body
+ *  - public.tenants          status, is_suspended
+ *  - public.app_settings     paused_message_title, paused_message_body
  *
  * Base NUNCA escribe en tablas de CEREBRO.
  * ============================================================
@@ -24,7 +24,7 @@ import React from 'react'
 import { supabase } from '@/config/supabase'
 import { resolveTenantId } from '@/lib/tenant'
 
-// â”€â”€â”€ Helpers de entorno (Vite inyecta VITE_* en build-time) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Helpers de entorno (Vite inyecta VITE_* en build-time)
 const asBool = (v: unknown, def = false): boolean => {
   if (v === undefined || v === null) return def
   const s = String(v).trim().toLowerCase()
@@ -35,7 +35,7 @@ const DISABLE_LOGIN        = asBool(import.meta.env.VITE_DISABLE_LOGIN,        f
 const AUTH_BYPASS          = asBool(import.meta.env.VITE_AUTH_BYPASS,          false)
 const TENANT_GATE_ENABLED  = asBool(import.meta.env.VITE_TENANT_GATE_ENABLED,  true)
 
-// â”€â”€â”€ Tipos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Tipos
 type GateStatus = 'checking' | 'ok' | 'blocked'
 
 interface BlockedContent {
@@ -43,23 +43,23 @@ interface BlockedContent {
   body:  string
 }
 
-// Mensajes de fallback si CEREBRO no devuelve configuraciÃ³n
+// Mensajes de fallback si CEREBRO no devuelve configuración
 const DEFAULT_BLOCKED: BlockedContent = {
   title: 'Servicio no disponible',
-  body:  'El acceso para esta empresa estÃ¡ temporalmente suspendido. Contacte a su proveedor para mÃ¡s informaciÃ³n.',
+  body:  'El acceso para esta empresa está temporalmente suspendido. Contacte a su proveedor para más información.',
 }
 
 const DEFAULT_ERROR: BlockedContent = {
-  title: 'Error de validaciÃ³n',
+  title: 'Error de validación',
   body:  'No se pudo verificar el estado de la empresa. Intente nuevamente o contacte al administrador.',
 }
 
-// â”€â”€â”€ Consulta cruzada a CEREBRO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Consulta cruzada a CEREBRO
 /**
  * Consulta el estado del tenant en CEREBRO (schema public).
  * Retorna null si falla la consulta.
  *
- * Requiere polÃ­tica RLS en public.tenants:
+ * Requiere política RLS en public.tenants:
  *   CREATE POLICY "employees can read their tenant status"
  *   ON public.tenants FOR SELECT TO authenticated
  *   USING (id = (
@@ -87,9 +87,9 @@ async function fetchTenantStatus(tenantId: string): Promise<{
 
 /**
  * Obtiene el mensaje de pausa configurado en CEREBRO.
- * Cae en DEFAULT_BLOCKED si no hay configuraciÃ³n.
+ * Cae en DEFAULT_BLOCKED si no hay configuración.
  *
- * Requiere polÃ­tica RLS en public.app_settings:
+ * Requiere política RLS en public.app_settings:
  *   CREATE POLICY "authenticated can read app_settings"
  *   ON public.app_settings FOR SELECT TO authenticated
  *   USING (true);
@@ -112,7 +112,7 @@ async function fetchPausedMessage(): Promise<BlockedContent> {
   }
 }
 
-// â”€â”€â”€ Modal bloqueante â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Modal bloqueante
 function BlockedModal({ title, body }: BlockedContent) {
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -137,22 +137,22 @@ function BlockedModal({ title, body }: BlockedContent) {
           </div>
         </div>
 
-        {/* TÃ­tulo dinÃ¡mico desde CEREBRO */}
+        {/* Título dinámico desde CEREBRO */}
         <h2 className="mb-3 text-center text-xl font-bold text-red-300">
           {title}
         </h2>
 
-        {/* Cuerpo dinÃ¡mico desde CEREBRO */}
+        {/* Cuerpo dinámico desde CEREBRO */}
         <p className="mb-6 text-center text-sm leading-relaxed text-gray-300">
           {body}
         </p>
 
         {/* Nota fija */}
         <p className="text-center text-xs text-gray-500">
-          Si crees que es un error, comunÃ­cate con el proveedor del servicio.
+          Si crees que es un error, comunícate con el proveedor del servicio.
         </p>
 
-        {/* BotÃ³n de logout â€” permite al empleado cerrar sesiÃ³n y probar con otra cuenta */}
+        {/* Botón de logout → permite al colaborador cerrar sesión y probar con otra cuenta */}
         <button
           onClick={async () => {
             await supabase.auth.signOut()
@@ -160,24 +160,24 @@ function BlockedModal({ title, body }: BlockedContent) {
           }}
           className="mt-6 w-full rounded-lg border border-gray-700 bg-gray-800 py-2.5 text-sm font-medium text-gray-300 transition hover:border-gray-500 hover:text-white"
         >
-          Cerrar sesiÃ³n
+          Cerrar sesión
         </button>
       </div>
     </div>
   )
 }
 
-// â”€â”€â”€ Spinner de validaciÃ³n â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Spinner de validación
 function CheckingScreen() {
   return (
     <div className="fixed inset-0 z-[9998] flex flex-col items-center justify-center gap-3 bg-gray-950">
       <div className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-500/30 border-t-cyan-500" />
-      <p className="text-sm text-gray-400">Verificando accesoâ€¦</p>
+      <p className="text-sm text-gray-400">Verificando acceso</p>
     </div>
   )
 }
 
-// â”€â”€â”€ Componente principal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+//  Componente principal
 export function TenantGate({ children }: { children: React.ReactNode }) {
 
   // Bypass completo para entornos de prueba
@@ -194,12 +194,12 @@ export function TenantGate({ children }: { children: React.ReactNode }) {
 
     const run = async () => {
       try {
-        // 1. Verificar sesiÃ³n activa
+        // 1. Verificar sesión activa
         const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
         if (!alive) return
 
         if (sessionError || !sessionData?.session) {
-          // Sin sesiÃ³n â†’ no bloquear (el ProtectedRoute se encarga de redirigir a /login)
+          // Sin sesión → no bloquear (el ProtectedRoute se encarga de redirigir a /login)
           setGateStatus('ok')
           return
         }
@@ -211,10 +211,10 @@ export function TenantGate({ children }: { children: React.ReactNode }) {
         if (!alive) return
 
         if (!tenantId) {
-          // Empleado sin empresa asignada â†’ bloquear con mensaje genÃ©rico
+          // Colaborador sin empresa asignada → bloquear con mensaje genérico
           setBlocked({
             title: 'Empresa no asignada',
-            body:  'Tu usuario no estÃ¡ vinculado a ninguna empresa. Contacta al administrador.',
+            body:  'Tu usuario no está vinculado a ninguna empresa. Contacta al administrador.',
           })
           setGateStatus('blocked')
           return
@@ -225,13 +225,13 @@ export function TenantGate({ children }: { children: React.ReactNode }) {
         if (!alive) return
 
         if (!tenantData) {
-          // No se pudo leer â†’ bloquear por seguridad (no permitir bypass por fallo)
+          // No se pudo leer  bloquear por seguridad (no permitir bypass por fallo)
           setBlocked(DEFAULT_ERROR)
           setGateStatus('blocked')
           return
         }
 
-        // 4. Evaluar si estÃ¡ activa
+        // 4. Evaluar si está activa
         //    Bloqueado si: status != 'active'  OR  is_suspended = true
         const isBlocked = tenantData.status !== 'active' || tenantData.is_suspended === true
 
@@ -245,7 +245,7 @@ export function TenantGate({ children }: { children: React.ReactNode }) {
           return
         }
 
-        // 6. Todo ok â†’ dejar pasar
+        // 6. Todo ok  dejar pasar
         setGateStatus('ok')
 
       } catch (err) {

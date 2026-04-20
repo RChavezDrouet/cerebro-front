@@ -47,7 +47,7 @@ export function defaultOrgLevels(tenantId: string): OrgLevelDefinition[] {
   return [
     'Dirección / Gerencia',
     'Departamento',
-    'Área',
+    'rea',
     'Subárea',
     'Unidad',
     'Sección',
@@ -290,7 +290,7 @@ export async function saveEmployeeShiftAssignment(tenantId: string, payload: Emp
 }
 
 export function buildOrgPath(units: OrgUnit[], unitId?: string | null): string {
-  if (!unitId) return '—'
+  if (!unitId) return ''
   const byId = new Map(units.map((u) => [u.id, u]))
   const parts: string[] = []
   const visited = new Set<string>()
@@ -305,7 +305,7 @@ export function buildOrgPath(units: OrgUnit[], unitId?: string | null): string {
     currentId = current.parent_id
   }
 
-  return parts.length ? parts.join(' > ') : '—'
+  return parts.length ? parts.join(' > ') : ''
 }
 
 export function resolveSupervisorLabel(
@@ -313,7 +313,7 @@ export function resolveSupervisorLabel(
   employees: EmployeeLookup[],
   units: OrgUnit[],
 ): string {
-  if (!assignment) return '—'
+  if (!assignment) return ''
 
   const employeeById = new Map(employees.map((row) => [row.id, row]))
   if (assignment.supervisor_employee_id) {
@@ -330,4 +330,42 @@ export function resolveSupervisorLabel(
   }
 
   return 'No configurado'
+}
+
+export function resolveImmediateSupervisorEmployeeId(
+  units: OrgUnit[],
+  unitId?: string | null,
+  employeeId?: string | null,
+): string | null {
+  if (!unitId) return null
+
+  const byId = new Map(units.map((unit) => [unit.id, unit]))
+  const visited = new Set<string>()
+  let current: OrgUnit | undefined | null = byId.get(unitId)
+
+  while (current) {
+    if (visited.has(current.id)) break
+    visited.add(current.id)
+
+    if (current.responsible_employee_id && current.responsible_employee_id !== employeeId) {
+      return current.responsible_employee_id
+    }
+
+    current = current.parent_id ? byId.get(current.parent_id) ?? null : null
+  }
+
+  return null
+}
+
+export function resolveImmediateSupervisorLabel(
+  units: OrgUnit[],
+  employees: EmployeeLookup[],
+  unitId?: string | null,
+  employeeId?: string | null,
+): string {
+  const supervisorId = resolveImmediateSupervisorEmployeeId(units, unitId, employeeId)
+  if (!supervisorId) return 'Derivado del organigrama'
+
+  const employeeById = new Map(employees.map((row) => [row.id, row]))
+  return employeeById.get(supervisorId)?.full_name ?? 'Derivado del organigrama'
 }

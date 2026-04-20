@@ -9,12 +9,12 @@ export function EmployeeLeadershipBadge({
   isLeader?: boolean
   levelLabel?: string | null
 }) {
-  if (!isLeader) return <Badge tone="neutral">No es jefe</Badge>
+  if (!isLeader) return <Badge tone="neutral">No es líder</Badge>
   return (
     <Badge tone="info">
       <span className="inline-flex items-center gap-1">
         <Star size={12} className="fill-current" />
-        Jefe{levelLabel ? ` de ${levelLabel}` : ''}
+        Líder{levelLabel ? ` de ${levelLabel}` : ' de unidad'}
       </span>
     </Badge>
   )
