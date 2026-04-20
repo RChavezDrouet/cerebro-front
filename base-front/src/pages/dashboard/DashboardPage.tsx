@@ -3,8 +3,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import {
   AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
   Building2,
   CalendarRange,
   ChevronRight,
@@ -19,7 +17,6 @@ import {
   X,
 } from 'lucide-react'
 
-import { ExecutiveGauge } from '@/components/dashboard/ExecutiveGauge'
 import { ExecutiveTrendChart } from '@/components/dashboard/ExecutiveTrendChart'
 import { Badge } from '@/components/ui/Badge'
 import { Card } from '@/components/ui/Card'
@@ -61,6 +58,7 @@ import {
   buildMockDashboardBundle,
   resolveDashboardDataMode,
 } from '@/lib/dashboard/mockDashboardFactory'
+import { baseDebug } from '@/lib/debug'
 import {
   buildOrgMetricRows,
   buildOrgSlices,
@@ -145,13 +143,70 @@ const EMPTY_PERMISSION_BREAKDOWN: DashboardPermissionBreakdown = {
   rejected: 0,
 }
 
+const DASHBOARD_PERIOD_STORAGE_KEY = 'hrcloud.base.dashboard.period.v1'
+
 const PERIODS: DashboardPeriod[] = ['hoy', 'semana', 'mes', 'trimestre']
 
-const PERIOD_LABELS: Record<DashboardPeriod, string> = {
-  hoy: 'Hoy',
-  semana: 'Semana',
-  mes: 'Mes',
-  trimestre: 'Trimestre',
+const PERIOD_OPTIONS: Array<{
+  key: DashboardPeriod
+  label: string
+  hint: string
+}> = [
+  { key: 'hoy', label: 'Diario', hint: '24h' },
+  { key: 'semana', label: 'Semanal', hint: 'Vista base' },
+  { key: 'mes', label: 'Mensual', hint: '30 días' },
+  { key: 'trimestre', label: 'Trimestral', hint: '90 días' },
+]
+
+function isDashboardPeriod(value: string): value is DashboardPeriod {
+  return PERIODS.includes(value as DashboardPeriod)
+}
+
+function readStoredDashboardPeriod(): DashboardPeriod {
+  if (typeof window === 'undefined') return 'semana'
+
+  try {
+    const stored = window.sessionStorage.getItem(DASHBOARD_PERIOD_STORAGE_KEY)
+    if (stored && isDashboardPeriod(stored)) {
+      return stored
+    }
+  } catch {
+    // Ignore storage failures and fall back to the default weekly view.
+  }
+
+  return 'semana'
+}
+
+function getPunctualityBand(value: number) {
+  if (value >= 95) {
+    return {
+      label: 'Optimo',
+      description: 'Muy por encima de la meta.',
+      tone: 'good' as const,
+    }
+  }
+
+  if (value >= 93) {
+    return {
+      label: 'Aceptable',
+      description: 'Cumple la meta con margen ajustado.',
+      tone: 'info' as const,
+    }
+  }
+
+  if (value >= 88) {
+    return {
+      label: 'Riesgo',
+      description: 'Todavia es recuperable con accion puntual.',
+      tone: 'warn' as const,
+    }
+  }
+
+  return {
+    label: 'Critico',
+    description: 'Requiere intervencion prioritaria.',
+    tone: 'bad' as const,
+  }
 }
 
 const METRIC_CONFIG: Record<DashboardMetricKey, MetricConfig> = {
@@ -338,6 +393,48 @@ function FilterChip({
   )
 }
 
+function PeriodSelector({
+  value,
+  options,
+  onChange,
+}: {
+  value: DashboardPeriod
+  options: Array<{ key: DashboardPeriod; label: string; hint: string }>
+  onChange: (next: DashboardPeriod) => void
+}) {
+  return (
+    <div className="rounded-[1.55rem] border border-white/10 bg-white/[0.045] p-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {options.map((option) => {
+          const active = value === option.key
+
+          return (
+            <button
+              key={option.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(option.key)}
+              className={[
+                'group flex min-h-[4.2rem] flex-col justify-center rounded-[1.15rem] border px-4 py-3 text-left transition-all duration-200',
+                active
+                  ? 'border-white/30 bg-white text-slate-950 shadow-[0_18px_32px_rgba(15,23,42,0.28)]'
+                  : 'border-white/10 bg-white/[0.02] text-white/76 hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/8',
+              ].join(' ')}
+            >
+              <span className={`text-sm font-semibold tracking-tight ${active ? 'text-slate-950' : 'text-white'}`}>
+                {option.label}
+              </span>
+              <span className={`mt-1 text-[11px] uppercase tracking-[0.18em] ${active ? 'text-slate-600' : 'text-white/42'}`}>
+                {option.hint}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function KpiCard({
   label,
   value,
@@ -350,57 +447,81 @@ function KpiCard({
 }: KpiCardDefinition) {
   const border =
     tone === 'good'
-      ? 'border-emerald-400/20'
+      ? 'border-emerald-400/22'
       : tone === 'warn'
-        ? 'border-amber-400/20'
+        ? 'border-amber-400/22'
         : tone === 'bad'
-          ? 'border-rose-400/20'
+          ? 'border-rose-400/22'
           : tone === 'info'
-            ? 'border-sky-400/20'
+            ? 'border-sky-400/22'
             : 'border-white/10'
 
   const glow =
     tone === 'good'
-      ? 'from-emerald-500/18 via-emerald-300/8'
+      ? 'from-emerald-500/22 via-emerald-300/10'
       : tone === 'warn'
-        ? 'from-amber-500/18 via-orange-300/8'
+        ? 'from-amber-500/22 via-orange-300/10'
         : tone === 'bad'
-          ? 'from-rose-500/18 via-red-300/8'
+          ? 'from-rose-500/22 via-red-300/10'
           : tone === 'info'
-            ? 'from-sky-500/18 via-cyan-300/8'
-            : 'from-white/12 via-white/4'
+            ? 'from-sky-500/22 via-cyan-300/10'
+            : 'from-white/14 via-white/6'
 
   return (
     <div
       title={`${label}: ${value}`}
-      className={`relative overflow-hidden rounded-[1.8rem] border ${border} bg-[#09111d]/80 p-5 shadow-soft transition-transform duration-200 hover:-translate-y-0.5`}
+      className={`relative min-h-[11.75rem] overflow-hidden rounded-[1.9rem] border ${border} bg-[#07111d]/88 p-5 shadow-soft transition-transform duration-200 hover:-translate-y-0.5`}
     >
       <div className={`absolute inset-0 bg-gradient-to-br ${glow} to-transparent`} />
-      <div className="absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent" />
-      <div className="absolute -right-6 top-0 h-24 w-24 rounded-full bg-white/10 blur-3xl" />
-      <div className="relative flex h-full flex-col gap-5">
+      <div className="absolute inset-x-5 top-0 h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+      <div className="absolute -right-5 top-0 h-24 w-24 rounded-full bg-white/10 blur-3xl" />
+      <div className="relative flex h-full flex-col gap-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/42">{label}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/44">{label}</p>
               {chipLabel ? (
                 <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${toneChipClass(chipTone)}`}>
                   {chipLabel}
                 </span>
               ) : null}
             </div>
-            <p className="text-3xl font-semibold tracking-tight text-white">{value}</p>
-            <p className="max-w-[18rem] text-sm leading-6 text-white/60">{subtitle}</p>
+            <p className="text-[2rem] font-semibold tracking-tight text-white sm:text-[2.25rem]">{value}</p>
+            <p className="max-w-[17rem] text-sm leading-6 text-white/62">{subtitle}</p>
           </div>
-          <div className={`rounded-[1.15rem] border p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_18px_32px_rgba(15,23,42,0.32)] ${iconWrapClass}`}>
+          <div className={`flex h-12 w-12 items-center justify-center rounded-[1.2rem] border shadow-[inset_0_1px_0_rgba(255,255,255,0.18),0_20px_38px_rgba(15,23,42,0.34)] ${iconWrapClass}`}>
             {icon}
           </div>
         </div>
 
-        <div className="mt-auto flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-white/38">
+        <div className="mt-auto flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-white/36">
           <span className="h-2 w-2 rounded-full bg-white/55" />
           <span>Resumen ejecutivo</span>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function ExecutiveInsight({
+  tone,
+  title,
+  description,
+}: {
+  tone: KpiTone
+  title: string
+  description: string
+}) {
+  return (
+    <div className={`relative overflow-hidden rounded-[1.6rem] border border-white/10 bg-white/[0.045] p-4 ${toneChipClass(tone)}`}>
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent" />
+      <div className="relative space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone={tone}>{title}</Badge>
+          <Badge tone="neutral">Meta 93%</Badge>
+        </div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/44">Lectura ejecutiva</p>
+        <p className="max-w-2xl text-sm leading-6 text-white/70">{description}</p>
       </div>
     </div>
   )
@@ -420,13 +541,13 @@ function SpotlightCard({
   icon: React.ReactNode
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-[1.4rem] border bg-white/[0.045] p-4 ${toneChipClass(tone)}`}>
-      <div className="absolute inset-0 bg-gradient-to-br from-white/8 via-transparent to-transparent" />
+    <div className={`relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-white/[0.045] p-4 ${toneChipClass(tone)}`}>
+      <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent" />
       <div className="relative flex items-start justify-between gap-4">
         <div className="space-y-2">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/42">{eyebrow}</p>
           <p className="text-lg font-semibold text-white">{title}</p>
-          <p className="text-sm leading-6 text-white/60">{description}</p>
+          <p className="max-w-[30rem] text-sm leading-6 text-white/60">{description}</p>
         </div>
         <div className={`rounded-2xl border p-3 ${toneChipClass(tone)}`}>{icon}</div>
       </div>
@@ -434,7 +555,7 @@ function SpotlightCard({
   )
 }
 
-function SignalTile({
+function MetricMiniCard({
   label,
   value,
   note,
@@ -445,19 +566,211 @@ function SignalTile({
   note: string
   tone: KpiTone
 }) {
-  const trendIcon =
-    tone === 'good' ? <ArrowUpRight size={16} className="text-emerald-300" />
-      : tone === 'bad' ? <ArrowDownRight size={16} className="text-rose-300" />
-        : <ArrowUpRight size={16} className="text-sky-300" />
+  const accent =
+    tone === 'good'
+      ? 'from-emerald-400 to-lime-300'
+      : tone === 'warn'
+        ? 'from-amber-400 to-orange-300'
+        : tone === 'bad'
+          ? 'from-rose-400 to-fuchsia-300'
+          : tone === 'info'
+            ? 'from-cyan-400 to-sky-300'
+            : 'from-white/40 to-white/20'
 
   return (
-    <div className="rounded-[1.35rem] border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/42">{label}</p>
-        {trendIcon}
+    <div className="relative min-h-[8.5rem] overflow-hidden rounded-[1.4rem] border border-white/10 bg-white/[0.045] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className={`absolute inset-x-0 top-0 h-px bg-gradient-to-r ${accent}`} />
+      <div className="flex h-full flex-col justify-between gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/44">{label}</p>
+          <span className={`h-2.5 w-2.5 rounded-full bg-gradient-to-br ${accent}`} />
+        </div>
+        <div>
+          <p className="text-2xl font-semibold tracking-tight text-white">{value}</p>
+          <p className="mt-2 text-sm leading-6 text-white/60">{note}</p>
+        </div>
       </div>
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-white">{value}</p>
-      <p className="mt-2 text-sm text-white/58">{note}</p>
+    </div>
+  )
+}
+
+function polarToCartesian(cx: number, cy: number, radius: number, angleInDegrees: number) {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180
+
+  return {
+    x: cx + radius * Math.cos(angleInRadians),
+    y: cy + radius * Math.sin(angleInRadians),
+  }
+}
+
+function PunctualityProgressCard({
+  value,
+  target,
+  label,
+  subtitle,
+}: {
+  value: number
+  target: number
+  label: string
+  subtitle: string
+}) {
+  const clamped = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0))
+  const targetClamped = Math.max(0, Math.min(100, Number.isFinite(target) ? target : 93))
+  const band = getPunctualityBand(clamped)
+  const gradientId = React.useId().replace(/:/g, '')
+  const radius = 118
+  const circumference = 2 * Math.PI * radius
+  const progressOffset = circumference - (clamped / 100) * circumference
+  const markerPoint = polarToCartesian(160, 160, radius, targetClamped * 3.6 - 90)
+
+  return (
+    <div className="relative overflow-hidden rounded-[1.9rem] border border-white/10 bg-[#07111d]/88 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(34,197,94,0.14),transparent_38%),radial-gradient(circle_at_bottom,rgba(56,189,248,0.12),transparent_30%)]" />
+      <div className="relative">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/42">Puntualidad ejecutiva</p>
+            <p className="mt-2 text-lg font-semibold text-white">{label}</p>
+          </div>
+          <Badge tone={band.tone}>{band.label}</Badge>
+        </div>
+
+        <div className="mt-4 flex items-center justify-center">
+          <svg viewBox="0 0 320 320" className="h-[18rem] w-[18rem] max-w-full">
+            <defs>
+              <linearGradient id={`${gradientId}-track`} x1="0%" x2="100%" y1="0%" y2="0%">
+                <stop offset="0%" stopColor="rgba(255,255,255,0.10)" />
+                <stop offset="100%" stopColor="rgba(255,255,255,0.04)" />
+              </linearGradient>
+              <linearGradient id={`${gradientId}-progress`} x1="0%" x2="100%" y1="0%" y2="0%">
+                <stop offset="0%" stopColor="#22c55e" />
+                <stop offset="48%" stopColor="#38bdf8" />
+                <stop offset="100%" stopColor="#8b5cf6" />
+              </linearGradient>
+              <linearGradient id={`${gradientId}-shadow`} x1="0%" x2="0%" y1="0%" y2="100%">
+                <stop offset="0%" stopColor="rgba(15,23,42,0.96)" />
+                <stop offset="100%" stopColor="rgba(15,23,42,0.72)" />
+              </linearGradient>
+              <filter id={`${gradientId}-glow`}>
+                <feGaussianBlur stdDeviation="4" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+
+            <circle cx="160" cy="160" r={radius} fill="none" stroke={`url(#${gradientId}-track)`} strokeWidth="28" />
+            <circle
+              cx="160"
+              cy="160"
+              r={radius}
+              fill="none"
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth="28"
+              strokeLinecap="round"
+              strokeDasharray={`${(clamped / 100) * circumference} ${circumference}`}
+              strokeDashoffset={progressOffset}
+              transform="rotate(-90 160 160)"
+              filter={`url(#${gradientId}-glow)`}
+            />
+            <circle
+              cx="160"
+              cy="160"
+              r={radius}
+              fill="none"
+              stroke={`url(#${gradientId}-progress)`}
+              strokeWidth="24"
+              strokeLinecap="round"
+              strokeDasharray={`${(clamped / 100) * circumference} ${circumference}`}
+              strokeDashoffset={progressOffset}
+              transform="rotate(-90 160 160)"
+              filter={`url(#${gradientId}-glow)`}
+            />
+            <circle
+              cx="160"
+              cy="160"
+              r="86"
+              fill={`url(#${gradientId}-shadow)`}
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth="1.5"
+            />
+
+            <circle
+              cx="160"
+              cy="40"
+              r="7"
+              fill="#f8fafc"
+              stroke="rgba(255,255,255,0.18)"
+              strokeWidth="2"
+              opacity="0.92"
+            />
+
+            <line
+              x1="160"
+              y1="42"
+              x2="160"
+              y2="62"
+              stroke="rgba(255,255,255,0.18)"
+              strokeWidth="2"
+            />
+
+            <text x="160" y="150" fill="#ffffff" fontSize="42" fontWeight="700" textAnchor="middle">
+              {formatPercent(clamped)}
+            </text>
+            <text x="160" y="176" fill="rgba(255,255,255,0.58)" fontSize="12" fontWeight="500" textAnchor="middle">
+              Meta {formatPercent(targetClamped)} · {band.description}
+            </text>
+            <text x="160" y="198" fill="rgba(255,255,255,0.42)" fontSize="11" textAnchor="middle">
+              Brecha {formatNumber(Math.abs(targetClamped - clamped))} pp
+            </text>
+
+            <circle
+              cx="160"
+              cy="160"
+              r="48"
+              fill="rgba(255,255,255,0.03)"
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth="1"
+            />
+
+            <circle
+              cx={markerPoint.x}
+              cy={markerPoint.y}
+              r="6.5"
+              fill="rgba(255,255,255,0.96)"
+              stroke="rgba(34,197,94,0.9)"
+              strokeWidth="3"
+            />
+            <text x="160" y="236" fill="rgba(255,255,255,0.55)" fontSize="11" textAnchor="middle">
+              Estado semántico: {band.label}
+            </text>
+          </svg>
+        </div>
+
+        <div className="mt-1 grid gap-3 sm:grid-cols-3">
+          <MetricMiniCard
+            label="Actual"
+            value={formatPercent(clamped)}
+            note="Puntualidad observada en el rango."
+            tone={band.tone}
+          />
+          <MetricMiniCard
+            label="Meta"
+            value={formatPercent(targetClamped)}
+            note="Objetivo de control visible."
+            tone="good"
+          />
+          <MetricMiniCard
+            label="Brecha"
+            value={`${formatNumber(Math.abs(targetClamped - clamped))} pp`}
+            note="Distancia al objetivo."
+            tone={band.tone}
+          />
+        </div>
+
+        <p className="mt-3 text-center text-sm leading-6 text-white/60">{subtitle}</p>
+      </div>
     </div>
   )
 }
@@ -968,7 +1281,7 @@ export default function DashboardPage() {
   const tenantContext = useTenantContext(user?.id)
   const location = useLocation()
 
-  const [period, setPeriod] = React.useState<DashboardPeriod>('hoy')
+  const [period, setPeriod] = React.useState<DashboardPeriod>(() => readStoredDashboardPeriod())
   const [journeyMetric, setJourneyMetric] = React.useState<DashboardMetricKey>('late')
   const [journeyFilter, setJourneyFilter] = React.useState<string | null>(null)
   const [journeyPathIds, setJourneyPathIds] = React.useState<string[]>([])
@@ -983,18 +1296,48 @@ export default function DashboardPage() {
   const range = React.useMemo(() => periodRange(period), [period])
   const periodLabel = React.useMemo(() => formatPeriodLabel(range.from, range.to), [range.from, range.to])
 
+  React.useEffect(() => {
+    try {
+      window.sessionStorage.setItem(DASHBOARD_PERIOD_STORAGE_KEY, period)
+    } catch {
+      // Ignore storage failures and keep the state local.
+    }
+  }, [period])
+
   const dashboardQuery = useQuery({
     queryKey: ['dashboard-bi-v3', dashboardDataMode, effectiveTenantId, period, range.from, range.to],
     enabled: Boolean(effectiveTenantId),
     placeholderData: (previousData) => previousData,
     queryFn: async (): Promise<DashboardBundle> => {
+      baseDebug('dashboard.query.start', {
+        mode: import.meta.env.MODE,
+        prod: import.meta.env.PROD,
+        dashboardDataMode,
+        isMockMode,
+        tenantId,
+        effectiveTenantId,
+        period,
+        from: range.from,
+        to: range.to,
+      })
+
       if (isMockMode) {
-        return buildMockDashboardBundle({
+        const bundle = await buildMockDashboardBundle({
           tenantId: tenantId ?? effectiveTenantId,
           period,
           from: range.from,
           to: range.to,
         })
+        baseDebug('dashboard.query.mock-result', {
+          roster: bundle.roster.length,
+          dailyRows: bundle.dailyRows.length,
+          punchRows: bundle.punchSourceDataset.rows.length,
+          noveltyRows: bundle.noveltyDataset.rows.length,
+          permissionRows: bundle.permissionDataset.rows.length,
+          overtimeRows: bundle.overtimeDataset.rows.length,
+          fineRows: bundle.fineDataset.rows.length,
+        })
+        return bundle
       }
 
       const resolvedTenantId = tenantId!
@@ -1023,7 +1366,7 @@ export default function DashboardPage() {
         fetchCurrentOrgAssignments(resolvedTenantId),
       ])
 
-      return {
+      const bundle = {
         roster,
         dailyRows,
         punchSourceDataset,
@@ -1035,6 +1378,19 @@ export default function DashboardPage() {
         orgUnits,
         orgAssignments,
       }
+      baseDebug('dashboard.query.real-result', {
+        roster: bundle.roster.length,
+        dailyRows: bundle.dailyRows.length,
+        punchRows: bundle.punchSourceDataset.rows.length,
+        noveltyRows: bundle.noveltyDataset.rows.length,
+        permissionRows: bundle.permissionDataset.rows.length,
+        overtimeRows: bundle.overtimeDataset.rows.length,
+        fineRows: bundle.fineDataset.rows.length,
+        orgLevels: bundle.orgLevels.length,
+        orgUnits: bundle.orgUnits.length,
+        orgAssignments: bundle.orgAssignments.length,
+      })
+      return bundle
     },
     staleTime: 60_000,
   })
@@ -1205,6 +1561,23 @@ export default function DashboardPage() {
     || (!dashboardQuery.data && dashboardQuery.isLoading)
   const isRefreshing = Boolean(dashboardQuery.data) && dashboardQuery.isFetching
 
+  React.useEffect(() => {
+    baseDebug('dashboard.state', {
+      mode: import.meta.env.MODE,
+      prod: import.meta.env.PROD,
+      dashboardDataMode,
+      tenantId,
+      effectiveTenantId,
+      isInitialLoading,
+      hasData: Boolean(data),
+      isFetching: dashboardQuery.isFetching,
+      isError: dashboardQuery.isError,
+      error: dashboardQuery.error instanceof Error ? dashboardQuery.error.message : dashboardQuery.error ? String(dashboardQuery.error) : null,
+      roster: data?.roster.length ?? null,
+      dailyRows: data?.dailyRows.length ?? null,
+    })
+  }, [dashboardDataMode, tenantId, effectiveTenantId, isInitialLoading, data, dashboardQuery.isFetching, dashboardQuery.isError, dashboardQuery.error])
+
   const openPeopleDrawer = React.useCallback(
     (
       metricKey: DashboardMetricKey,
@@ -1295,30 +1668,26 @@ export default function DashboardPage() {
     setJourneyPathIds((current) => current.slice(0, index + 1))
   }, [])
 
-  const periodActions = PERIODS.map((item) => ({
-    key: item,
-    label: PERIOD_LABELS[item],
-  }))
-
   const latePressurePct = safePercent(100 - kpis.punctualityPct)
   const punctualityTone: KpiTone = kpis.punctualityPct >= 93 ? 'good' : kpis.punctualityPct >= 88 ? 'warn' : 'bad'
   const absenteeismTone: KpiTone = kpis.absenteeismPct <= 4 ? 'good' : kpis.absenteeismPct <= 7 ? 'warn' : 'bad'
   const presentismTone: KpiTone = kpis.presentismPct >= 94 ? 'good' : kpis.presentismPct >= 88 ? 'warn' : 'bad'
   const pressureTone: KpiTone = latePressurePct <= 7 ? 'good' : latePressurePct <= 12 ? 'warn' : 'bad'
-  const pressureLabel = latePressurePct <= 7 ? 'Low' : latePressurePct <= 12 ? 'Medium' : 'High'
-  const gaugeContextLabel =
+  const pressureLabel = latePressurePct <= 7 ? 'Bajo' : latePressurePct <= 12 ? 'Medio' : 'Alto'
+  const punctualityInsightLabel =
     kpis.punctualityPct >= 93 ? 'Ritmo estable'
       : kpis.punctualityPct >= 88 ? 'Vigilancia activa'
         : 'Foco critico'
+  const punctualityBand = getPunctualityBand(kpis.punctualityPct)
 
   const kpiCards: KpiCardDefinition[] = [
     {
       label: 'Total colaboradores',
       value: formatNumber(kpis.totalCollaborators),
       subtitle: 'Base activa del tenant para el periodo actual',
-      icon: <Users size={20} className="text-sky-200" />,
+      icon: <Users size={20} className="text-white" />,
       tone: 'info',
-      iconWrapClass: 'border-sky-400/20 bg-sky-500/12 text-sky-200',
+      iconWrapClass: 'border-sky-300/35 bg-gradient-to-br from-sky-500 via-blue-500 to-cyan-400 text-white shadow-[0_18px_38px_rgba(14,165,233,0.28)]',
       chipLabel: 'Base',
       chipTone: 'info',
     },
@@ -1326,9 +1695,9 @@ export default function DashboardPage() {
       label: '% puntualidad',
       value: formatPercent(kpis.punctualityPct),
       subtitle: 'Sobre marcaciones con presencia y control horario',
-      icon: <Clock3 size={20} className="text-emerald-200" />,
+      icon: <Clock3 size={20} className="text-white" />,
       tone: punctualityTone,
-      iconWrapClass: 'border-emerald-400/20 bg-emerald-500/12 text-emerald-200',
+      iconWrapClass: 'border-emerald-300/35 bg-gradient-to-br from-emerald-500 via-lime-400 to-cyan-400 text-white shadow-[0_18px_38px_rgba(16,185,129,0.28)]',
       chipLabel: kpis.punctualityPct >= 93 ? 'En meta' : 'Seguimiento',
       chipTone: punctualityTone,
     },
@@ -1336,9 +1705,9 @@ export default function DashboardPage() {
       label: '% ausentismo',
       value: formatPercent(kpis.absenteeismPct),
       subtitle: `${formatNumber(kpis.totalAbsence)} faltas detectadas en el rango`,
-      icon: <AlertTriangle size={20} className="text-amber-200" />,
+      icon: <AlertTriangle size={20} className="text-white" />,
       tone: absenteeismTone,
-      iconWrapClass: 'border-amber-400/20 bg-amber-500/12 text-amber-200',
+      iconWrapClass: 'border-amber-300/35 bg-gradient-to-br from-amber-500 via-orange-500 to-rose-400 text-white shadow-[0_18px_38px_rgba(245,158,11,0.28)]',
       chipLabel: absenteeismTone === 'good' ? 'Controlado' : 'Sensitivo',
       chipTone: absenteeismTone,
     },
@@ -1346,9 +1715,9 @@ export default function DashboardPage() {
       label: 'Total atrasos',
       value: formatNumber(kpis.totalLate),
       subtitle: 'Incidentes acumulados de entrada tardia',
-      icon: <TimerReset size={20} className="text-orange-200" />,
+      icon: <TimerReset size={20} className="text-white" />,
       tone: pressureTone,
-      iconWrapClass: 'border-orange-400/20 bg-orange-500/12 text-orange-200',
+      iconWrapClass: 'border-orange-300/35 bg-gradient-to-br from-orange-500 via-amber-500 to-fuchsia-400 text-white shadow-[0_18px_38px_rgba(249,115,22,0.28)]',
       chipLabel: pressureLabel,
       chipTone: pressureTone,
     },
@@ -1356,9 +1725,9 @@ export default function DashboardPage() {
       label: 'Total permisos',
       value: data?.permissionDataset.unavailable ? 'N/D' : formatNumber(kpis.totalPermissions),
       subtitle: data?.permissionDataset.unavailable ? 'Fuente no disponible' : 'Solicitudes dentro del rango seleccionado',
-      icon: <CalendarRange size={20} className="text-violet-200" />,
+      icon: <CalendarRange size={20} className="text-white" />,
       tone: data?.permissionDataset.unavailable ? 'neutral' : 'info',
-      iconWrapClass: 'border-violet-400/20 bg-violet-500/12 text-violet-200',
+      iconWrapClass: 'border-violet-300/35 bg-gradient-to-br from-violet-500 via-fuchsia-500 to-sky-400 text-white shadow-[0_18px_38px_rgba(139,92,246,0.28)]',
       chipLabel: data?.permissionDataset.unavailable ? 'Offline' : 'Workflow',
       chipTone: data?.permissionDataset.unavailable ? 'neutral' : 'info',
     },
@@ -1366,9 +1735,9 @@ export default function DashboardPage() {
       label: 'Total multas',
       value: data?.fineDataset.unavailable ? 'N/D' : formatCurrency(kpis.totalFinesAmount),
       subtitle: data?.fineDataset.unavailable ? 'Fuente no disponible' : `${formatNumber(kpis.totalFinesCount)} multas aplicadas`,
-      icon: <TrendingUp size={20} className="text-rose-200" />,
+      icon: <TrendingUp size={20} className="text-white" />,
       tone: data?.fineDataset.unavailable ? 'neutral' : kpis.totalFinesAmount > 0 ? 'warn' : 'good',
-      iconWrapClass: 'border-rose-500/20 bg-rose-500/12 text-rose-200',
+      iconWrapClass: 'border-rose-300/35 bg-gradient-to-br from-rose-500 via-red-500 to-orange-400 text-white shadow-[0_18px_38px_rgba(244,63,94,0.28)]',
       chipLabel: data?.fineDataset.unavailable ? 'Offline' : kpis.totalFinesAmount > 0 ? 'Impacto' : 'Limpio',
       chipTone: data?.fineDataset.unavailable ? 'neutral' : kpis.totalFinesAmount > 0 ? 'warn' : 'good',
     },
@@ -1376,9 +1745,9 @@ export default function DashboardPage() {
       label: 'Horas extra aprobadas',
       value: data?.overtimeDataset.unavailable ? 'N/D' : formatHours(kpis.approvedOvertimeHours),
       subtitle: data?.overtimeDataset.unavailable ? 'Fuente no disponible' : 'Carga acumulada aprobada en el periodo',
-      icon: <Layers3 size={20} className="text-cyan-200" />,
+      icon: <Layers3 size={20} className="text-white" />,
       tone: data?.overtimeDataset.unavailable ? 'neutral' : 'info',
-      iconWrapClass: 'border-cyan-400/20 bg-cyan-500/12 text-cyan-200',
+      iconWrapClass: 'border-cyan-300/35 bg-gradient-to-br from-cyan-500 via-sky-500 to-violet-400 text-white shadow-[0_18px_38px_rgba(34,211,238,0.28)]',
       chipLabel: data?.overtimeDataset.unavailable ? 'Offline' : 'Capacidad',
       chipTone: data?.overtimeDataset.unavailable ? 'neutral' : 'info',
     },
@@ -1386,9 +1755,9 @@ export default function DashboardPage() {
       label: '% presentismo',
       value: formatPercent(kpis.presentismPct),
       subtitle: `${formatNumber(kpis.totalNovelty)} novedades operativas registradas`,
-      icon: <Building2 size={20} className="text-lime-200" />,
+      icon: <Building2 size={20} className="text-white" />,
       tone: presentismTone,
-      iconWrapClass: 'border-lime-400/20 bg-lime-500/12 text-lime-200',
+      iconWrapClass: 'border-lime-300/35 bg-gradient-to-br from-lime-500 via-emerald-400 to-cyan-400 text-white shadow-[0_18px_38px_rgba(132,204,22,0.28)]',
       chipLabel: presentismTone === 'good' ? 'Estable' : 'Seguimiento',
       chipTone: presentismTone,
     },
@@ -1502,18 +1871,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="rounded-[1.55rem] border border-white/10 bg-white/[0.045] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
-                  <div className="flex flex-wrap gap-2">
-                    {periodActions.map((item) => (
-                      <FilterChip
-                        key={item.key}
-                        active={period === item.key}
-                        label={item.label}
-                        onClick={() => setPeriod(item.key)}
-                      />
-                    ))}
-                  </div>
-                </div>
+                <PeriodSelector value={period} options={PERIOD_OPTIONS} onChange={setPeriod} />
               </div>
             </div>
           </section>
@@ -1579,57 +1937,56 @@ export default function DashboardPage() {
             </Card>
 
             <Card
-              title="Tacometro de puntualidad"
-              subtitle="Gauge protagonista con lectura ejecutiva inmediata"
+              title="Puntualidad ejecutiva"
+              subtitle="Lectura radial con meta, riesgo y contexto operativo"
               className="relative overflow-hidden rounded-[2.1rem] border border-emerald-400/20 bg-[#0b1220]/76 xl:col-span-5"
               actions={
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={pressureTone}>{pressureLabel}</Badge>
+                  <Badge tone={punctualityBand.tone}>{punctualityBand.label}</Badge>
                   <Badge tone="good">Meta 93%</Badge>
                 </div>
               }
             >
               <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/12 via-transparent to-cyan-400/10" />
-              <div className="relative grid gap-6 xl:grid-cols-[minmax(0,19rem),1fr] xl:items-center">
-                <ExecutiveGauge
+              <div className="relative grid gap-6 xl:grid-cols-[minmax(0,18rem),minmax(0,1fr)] xl:items-start">
+                <PunctualityProgressCard
                   value={kpis.punctualityPct}
+                  target={93}
                   label="Puntualidad"
                   subtitle={periodLabel}
-                  accentFrom="#22c55e"
-                  accentTo="#84cc16"
                 />
 
                 <div className="space-y-4">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/42">Lectura ejecutiva</p>
-                    <p className="mt-2 text-xl font-semibold text-white">{gaugeContextLabel}</p>
-                    <p className="mt-2 text-sm leading-6 text-white/60">
-                      {kpis.totalLate > 0
-                        ? `Se registran ${formatNumber(kpis.totalLate)} atrasos en ${periodLabel.toLowerCase()}, con impacto directo en disciplina operativa.`
-                        : 'No se registran atrasos relevantes para el periodo seleccionado.'}
-                    </p>
-                  </div>
+                  <ExecutiveInsight
+                    tone={punctualityTone}
+                    title={punctualityInsightLabel}
+                    description={
+                      kpis.totalLate > 0
+                        ? `Se registran ${formatNumber(kpis.totalLate)} atrasos en ${periodLabel.toLowerCase()}, con impacto directo en disciplina operativa y foco por jornada.`
+                        : 'No se registran atrasos relevantes para el periodo seleccionado; el foco operativo sigue estable.'
+                    }
+                  />
 
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <SignalTile
+                    <MetricMiniCard
                       label="Presentismo efectivo"
                       value={formatPercent(kpis.presentismPct)}
                       note="Marcaciones efectivas sobre el corte visible."
                       tone={presentismTone}
                     />
-                    <SignalTile
+                    <MetricMiniCard
                       label="Ausentismo"
                       value={formatPercent(kpis.absenteeismPct)}
                       note={`${formatNumber(kpis.totalAbsence)} faltas detectadas.`}
                       tone={absenteeismTone}
                     />
-                    <SignalTile
+                    <MetricMiniCard
                       label="Cobertura organica"
                       value={formatPercent(orgCoveragePct)}
                       note="Colaboradores activos con nodo asignado."
                       tone={orgCoveragePct >= 90 ? 'good' : orgCoveragePct >= 75 ? 'warn' : 'bad'}
                     />
-                    <SignalTile
+                    <MetricMiniCard
                       label="Horas extra"
                       value={data?.overtimeDataset.unavailable ? 'N/D' : formatHours(kpis.approvedOvertimeHours)}
                       note={data?.overtimeDataset.unavailable ? 'Fuente no disponible.' : 'Carga aprobada del periodo.'}
