@@ -43,6 +43,8 @@ import {
   fetchOrgUnits,
   isMissingOrgSchemaError,
   ORG_MIGRATION_HINT,
+  resolveImmediateSupervisorEmployeeId,
+  resolveImmediateSupervisorLabel,
   saveEmployeeOrgAssignment,
   saveEmployeeShiftAssignment,
 } from '@/lib/orgStructure'
@@ -207,7 +209,7 @@ async function fetchShifts(tenantId: string) {
   return (data ?? []) as Array<{ id: string; name: string; code?: string | null; is_active: boolean }>
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+//  Helpers
 
 function pill(active: boolean) {
   return (
@@ -298,7 +300,7 @@ function biometricSelectLabel(device: Pick<BiometricOptionRow, 'serial_no' | 'na
     : primary || serial || 'Biométrico'
 }
 
-// ─── Initial form values ──────────────────────────────────────────────────────
+//  Initial form values
 
 const INITIAL_FORM: EmployeeFormValues = {
   employee_code:      '',
@@ -378,7 +380,7 @@ const INITIAL_FORM: EmployeeFormValues = {
   password_confirm: '',
 }
 
-// ─── Dependents ───────────────────────────────────────────────────────────────
+//  Dependents
 
 type DependentRow = {
   id: string
@@ -443,7 +445,7 @@ function getAge(birthDate: string | null): number | null {
   return Math.floor((Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 3600 * 1000))
 }
 
-// ─── CargasFamiliaresSection ──────────────────────────────────────────────────
+//  CargasFamiliaresSection
 
 function CargasFamiliaresSection({
   dependents,
@@ -526,7 +528,7 @@ function CargasFamiliaresSection({
   return (
     <Card
       title="Cargas familiares"
-      subtitle="Art. 6 y 7 Código de Trabajo — cálculo 5% utilidades"
+      subtitle="Art. 6 y 7 Código de Trabajo - cálculo 5% utilidades"
     >
       <div className="space-y-5">
 
@@ -549,7 +551,8 @@ function CargasFamiliaresSection({
             />
             {showWarning && (
               <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                ⚠ {pastDeadline
+
+á  {pastDeadline
                   ? 'El plazo del 30 de marzo ya venció. Registra igualmente para el próximo período.'
                   : 'Registra las cargas antes del 30 de marzo para que apliquen al reparto de utilidades.'}
               </div>
@@ -647,7 +650,8 @@ function CargasFamiliaresSection({
                       <span className="text-xs text-white/50">{age} años</span>
                     )}
                     {dep.is_active && qualifies && (
-                      <span className="text-xs text-emerald-300">✓ Califica</span>
+                      <span className="text-xs text-emerald-300">
+ Califica</span>
                     )}
                   </div>
                   <button
@@ -701,7 +705,8 @@ function CargasFamiliaresSection({
 
                 {!dep.has_disability && age !== null && age >= 18 && (
                   <div className="rounded-xl border border-amber-400/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                    ⚠ Mayor de 18 años sin discapacidad — no califica como carga familiar
+
+  - Mayor de 18 años sin discapacidad - no califica como carga familiar
                   </div>
                 )}
               </div>
@@ -714,7 +719,7 @@ function CargasFamiliaresSection({
   )
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+//  Component
 
 export default function EmployeeFormPage({ mode }: Props) {
   const nav = useNavigate()
@@ -735,7 +740,7 @@ export default function EmployeeFormPage({ mode }: Props) {
   const [showPass, setShowPass] = React.useState(false)
   const [dependents, setDependents] = React.useState<DependentRow[]>([])
 
-  // ─── Queries ──────────────────────────────────────────────────────────────
+  //  Queries
 
   const deps = useQuery({
     queryKey: ['deps', tenantId],
@@ -836,7 +841,7 @@ export default function EmployeeFormPage({ mode }: Props) {
     queryFn:  () => fetchDependents(tenantId!, id!),
   })
 
-  // ─── Effects ──────────────────────────────────────────────────────────────
+  //  Effects
 
   React.useEffect(() => {
     if (!photoFile) return
@@ -932,9 +937,7 @@ export default function EmployeeFormPage({ mode }: Props) {
     setForm((f) => ({
       ...f,
       org_unit_id:            orgAssignment.data?.org_unit_id ?? null,
-      supervisor_employee_id: orgAssignment.data?.supervisor_employee_id ?? null,
       is_org_unit_leader:     orgAssignment.data?.is_unit_leader ?? false,
-      lead_org_unit_id:       orgAssignment.data?.lead_org_unit_id ?? null,
     }))
   }, [orgAssignment.data])
 
@@ -956,19 +959,12 @@ export default function EmployeeFormPage({ mode }: Props) {
   const setField = <K extends keyof EmployeeFormValues>(k: K, v: EmployeeFormValues[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
 
-  React.useEffect(() => {
-    if (!form.presential_schedule_id) return
-    const sel = (schedules.data ?? []).find((row) => row.id === form.presential_schedule_id)
-    if (!sel) return
-    if (form.work_shift_id && sel.turn_id !== form.work_shift_id) setField('presential_schedule_id', null)
-  }, [form.work_shift_id, form.presential_schedule_id, schedules.data])
-
   const toggleDay = (day: string) => {
     const current = form.presential_days ?? []
     setField('presential_days', current.includes(day) ? current.filter((d: string) => d !== day) : [...current, day])
   }
 
-  // ─── Save ─────────────────────────────────────────────────────────────────
+  //  Save
 
   const save = useMutation({
     mutationFn: async () => {
@@ -1043,6 +1039,12 @@ export default function EmployeeFormPage({ mode }: Props) {
       }
 
       const normalizedEmploymentStatus = String(form.employment_status || 'ACTIVE').toLowerCase()
+      const derivedSupervisorEmployeeId = resolveImmediateSupervisorEmployeeId(
+        orgUnits.data ?? [],
+        form.org_unit_id,
+        employeeId
+      )
+      const derivedLeaderUnitId = form.is_org_unit_leader ? form.org_unit_id ?? null : null
 
       const { error } = await supabase.schema(ATT_SCHEMA).rpc('upsert_employee_full', {
         p_tenant_id:         tenantId,
@@ -1067,11 +1069,11 @@ export default function EmployeeFormPage({ mode }: Props) {
         p_location_mode:     form.location_mode,
         p_entry_biometric_id: form.entry_biometric_id ?? null,
         p_exit_biometric_id:  form.exit_biometric_id  ?? null,
-        p_is_department_head: form.is_department_head ?? false,
+        p_is_department_head: form.is_org_unit_leader ?? false,
       })
       if (error) throw error
 
-      // Save extended fields — graceful: swallow if migration not yet applied
+      // Save extended fields  graceful: swallow if migration not yet applied
       await supabase.schema('public').from('employees').update({
         identification_type:      form.identification_type,
         birth_date:               form.birth_date   || null,
@@ -1132,11 +1134,9 @@ export default function EmployeeFormPage({ mode }: Props) {
         await saveEmployeeOrgAssignment(tenantId, {
           employee_id:            employeeId,
           org_unit_id:            form.org_unit_id ?? null,
-          supervisor_employee_id: form.supervisor_employee_id ?? null,
+          supervisor_employee_id: derivedSupervisorEmployeeId,
           is_unit_leader:         form.is_org_unit_leader ?? false,
-          lead_org_unit_id:       form.is_org_unit_leader
-            ? form.lead_org_unit_id ?? form.org_unit_id ?? null
-            : null,
+          lead_org_unit_id:       derivedLeaderUnitId,
         })
       } catch (assignmentError: any) {
         if (isMissingOrgSchemaError(assignmentError)) {
@@ -1153,7 +1153,7 @@ export default function EmployeeFormPage({ mode }: Props) {
         })
       } catch (shiftError: any) {
         if (isMissingOrgSchemaError(shiftError)) {
-          warnings.push('No se guardó turno efectivo porque falta la tabla employee_shift_assignments.')
+        warnings.push('No se guardó la jornada técnica porque falta la tabla employee_shift_assignments.')
         } else {
           throw shiftError
         }
@@ -1163,7 +1163,7 @@ export default function EmployeeFormPage({ mode }: Props) {
     },
     onSuccess: (result) => {
       toast.success(isEdit ? 'Colaborador actualizado' : 'Colaborador creado')
-      result.warnings.forEach((warning) => toast(warning, { icon: '⚠️' }))
+      result.warnings.forEach((warning) => toast(warning))
 
       qc.invalidateQueries({ queryKey: ['employees'] })
       qc.invalidateQueries({ queryKey: ['emp'] })
@@ -1195,32 +1195,21 @@ export default function EmployeeFormPage({ mode }: Props) {
     },
   })
 
-  // ─── Derived values ───────────────────────────────────────────────────────
+  //  Derived values
 
   const bioOptions = (bioDevices.data ?? []).map((d) => ({
     value: d.id,
     label: biometricSelectLabel(d as BiometricOptionRow),
   }))
 
-  const filteredSchedules = React.useMemo(() => {
-    const rows = schedules.data ?? []
-    if (!form.work_shift_id) return rows
-    return rows.filter((row) => row.turn_id === form.work_shift_id)
-  }, [schedules.data, form.work_shift_id])
-
-  const scheduleOptions  = filteredSchedules.map((s) => ({ value: s.id, label: s.name }))
-  const shiftOptions     = (shifts.data ?? []).map((shift) => ({
-    value: shift.id,
-    label: shift.code ? `${shift.name} (${shift.code})` : shift.name,
-  }))
+  const scheduleOptions  = (schedules.data ?? []).map((s) => ({ value: s.id, label: s.name }))
+  const selectedSchedule = React.useMemo(
+    () => (schedules.data ?? []).find((row) => row.id === form.presential_schedule_id) ?? null,
+    [schedules.data, form.presential_schedule_id]
+  )
   const orgUnitOptions   = (orgUnits.data ?? [])
     .filter((unit) => unit.is_active !== false)
     .map((unit) => ({ value: unit.id, label: buildOrgPath(orgUnits.data ?? [], unit.id) }))
-  const peopleOptions    = (people.data ?? []).map((person) => ({
-    value: person.id,
-    label: person.employee_code ? `${person.full_name} (${person.employee_code})` : person.full_name,
-  }))
-
   const showLocationFields   = form.work_modality === 'PRESENCIAL' || form.work_modality === 'MIXTO'
   const requiresSystemAccess = form.work_modality !== 'PRESENCIAL' || form.access_role !== 'employee'
   const showPwaSection       = form.work_modality !== 'PRESENCIAL'
@@ -1235,18 +1224,23 @@ export default function EmployeeFormPage({ mode }: Props) {
     : 'Sin unidad organizacional asignada'
 
   const leadLevelLabel = React.useMemo(() => {
-    const unit  = (orgUnits.data ?? []).find((row) => row.id === (form.lead_org_unit_id ?? form.org_unit_id))
+    const unit  = (orgUnits.data ?? []).find((row) => row.id === form.org_unit_id)
     const level = (orgLevels.data ?? []).find((row) => row.level_no === unit?.level_no)
     return level?.display_name ?? null
-  }, [form.lead_org_unit_id, form.org_unit_id, orgUnits.data, orgLevels.data])
+  }, [form.org_unit_id, orgUnits.data, orgLevels.data])
+
+  const derivedSupervisorLabel = React.useMemo(
+    () => resolveImmediateSupervisorLabel(orgUnits.data ?? [], people.data ?? [], form.org_unit_id, id),
+    [orgUnits.data, people.data, form.org_unit_id, id]
+  )
 
   const selectedRoleMeta = ACCESS_ROLE_OPTIONS.find((opt) => opt.value === form.access_role)
 
   if (isEdit && emp.isLoading) {
-    return <div className="text-white/70 p-6">Cargando datos del colaborador…</div>
+    return <div className="text-white/70 p-6">Cargando datos del colaborador</div>
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  //  Render
 
   return (
     <div className="space-y-6">
@@ -1262,7 +1256,7 @@ export default function EmployeeFormPage({ mode }: Props) {
           </button>
           <h1 className="text-xl font-bold">
             {isEdit
-              ? `Editar: ${emp.data ? `${(emp.data as any).first_name} ${(emp.data as any).last_name}` : '…'}`
+              ? `Editar: ${emp.data ? `${(emp.data as any).first_name} ${(emp.data as any).last_name}` : ''}`
               : 'Nuevo colaborador'}
           </h1>
         </div>
@@ -1271,7 +1265,7 @@ export default function EmployeeFormPage({ mode }: Props) {
           onClick={() => save.mutate()}
           disabled={save.isPending}
         >
-          {save.isPending ? 'Guardando…' : 'Guardar cambios'}
+          {save.isPending ? 'Guardando' : 'Guardar cambios'}
         </Button>
       </div>
 
@@ -1329,7 +1323,7 @@ export default function EmployeeFormPage({ mode }: Props) {
               }}
               error={errors.identification}
               inputMode={form.identification_type === 'CEDULA' ? 'numeric' : 'text'}
-              placeholder={form.identification_type === 'CEDULA' ? '10 dígitos' : '5–20 caracteres alfanuméricos'}
+              placeholder={form.identification_type === 'CEDULA' ? '10 dígitos' : '5-20 caracteres alfanuméricos'}
             />
 
             <Input
@@ -1355,14 +1349,14 @@ export default function EmployeeFormPage({ mode }: Props) {
               value={form.gender ?? ''}
               onChange={(v) => setField('gender', (v || null) as EmployeeFormValues['gender'])}
               options={GENDER_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              placeholder="Seleccione…"
+              placeholder="Seleccione"
             />
             <Select
               label="Estado civil"
               value={form.civil_status ?? ''}
               onChange={(v) => setField('civil_status', (v || null) as EmployeeFormValues['civil_status'])}
               options={CIVIL_STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-              placeholder="Seleccione…"
+              placeholder="Seleccione"
             />
             <Input
               label="Nacionalidad"
@@ -1385,7 +1379,7 @@ export default function EmployeeFormPage({ mode }: Props) {
                 className="w-full rounded-2xl border border-white/10 object-cover max-h-56" />
             )}
             {!photoPreview && form.facial_photo_url && !existingPhoto.data && (
-              <div className="text-xs text-white/50 italic">Foto guardada. Cargando vista previa…</div>
+              <div className="text-xs text-white/50 italic">Foto guardada. Cargando vista previa</div>
             )}
             {photoPreview && (
               <img src={photoPreview} alt="Vista previa nueva foto"
@@ -1401,7 +1395,8 @@ export default function EmployeeFormPage({ mode }: Props) {
               <div className="text-xs text-rose-200">La foto no cumple: {photoCheck.issues.join(', ')}</div>
             )}
             {photoCheck?.ok && (
-              <div className="text-xs text-emerald-300">✓ Fotografía válida</div>
+              <div className="text-xs text-emerald-300">
+✓ Fotografía válida</div>
             )}
           </div>
         </Card>
@@ -1437,12 +1432,12 @@ export default function EmployeeFormPage({ mode }: Props) {
             />
           </div>
           <Input
-            label="Contacto de emergencia — nombre"
+            label="Contacto de emergencia  nombre"
             value={form.emergency_contact_name ?? ''}
             onChange={(e) => setField('emergency_contact_name', e.target.value || null)}
           />
           <Input
-            label="Contacto de emergencia — teléfono"
+            label="Contacto de emergencia - teléfono"
             value={form.emergency_contact_phone ?? ''}
             onChange={(e) => setField('emergency_contact_phone', e.target.value || null)}
           />
@@ -1462,7 +1457,7 @@ export default function EmployeeFormPage({ mode }: Props) {
             value={form.department_id ?? ''}
             onChange={(v) => setField('department_id', v || null)}
             options={(deps.data ?? []).map((d: any) => ({ value: d.id, label: d.name }))}
-            placeholder="Seleccione departamento…"
+            placeholder="Seleccione departamento"
             error={errors.department_id}
           />
           <Input
@@ -1482,14 +1477,14 @@ export default function EmployeeFormPage({ mode }: Props) {
             value={form.contract_type ?? ''}
             onChange={(v) => setField('contract_type', (v || null) as EmployeeFormValues['contract_type'])}
             options={CONTRACT_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-            placeholder="Seleccione…"
+            placeholder="Seleccione"
           />
           <Select
             label="Régimen laboral"
             value={form.labor_regime ?? ''}
             onChange={(v) => setField('labor_regime', (v || null) as EmployeeFormValues['labor_regime'])}
             options={LABOR_REGIME_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-            placeholder="Seleccione…"
+            placeholder="Seleccione"
           />
         </div>
       </Card>
@@ -1542,14 +1537,14 @@ export default function EmployeeFormPage({ mode }: Props) {
                 value={form.disability_type ?? ''}
                 onChange={(v) => setField('disability_type', (v || null) as EmployeeFormValues['disability_type'])}
                 options={DISABILITY_TYPE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                placeholder="Seleccione…"
+                placeholder="Seleccione"
               />
               <Select
                 label="Grado"
                 value={form.disability_grade ?? ''}
                 onChange={(v) => setField('disability_grade', (v || null) as EmployeeFormValues['disability_grade'])}
                 options={DISABILITY_GRADE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-                placeholder="Seleccione…"
+                placeholder="Seleccione"
               />
               <Input
                 label="Número de carnet CONADIS"
@@ -1565,7 +1560,7 @@ export default function EmployeeFormPage({ mode }: Props) {
                     const n = e.target.value ? Math.min(100, Math.max(1, Number(e.target.value))) : null
                     setField('disability_percentage', n)
                   }}
-                  placeholder="1 – 100"
+                  placeholder="1  100"
                 />
                 <p className="text-xs text-white/50 mt-1">%</p>
               </div>
@@ -1594,7 +1589,7 @@ export default function EmployeeFormPage({ mode }: Props) {
             value={form.education_level ?? ''}
             onChange={(v) => setField('education_level', (v || null) as EmployeeFormValues['education_level'])}
             options={EDUCATION_LEVEL_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-            placeholder="Seleccione…"
+            placeholder="Seleccione"
           />
           <Input
             label="Título obtenido"
@@ -1623,7 +1618,7 @@ export default function EmployeeFormPage({ mode }: Props) {
             value={form.access_role}
             onChange={(v) => setField('access_role', (v || 'employee') as EmployeeFormValues['access_role'])}
             options={EMPLOYEE_ACCESS_ROLE_OPTIONS.map((opt) => ({ value: opt.value, label: opt.label }))}
-            placeholder="Seleccione rol…"
+            placeholder="Seleccione rol"
           />
           <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
             <div className="text-xs text-white/60">Rol seleccionado</div>
@@ -1830,10 +1825,10 @@ export default function EmployeeFormPage({ mode }: Props) {
         </Card>
       )}
 
-      {/* Organización / turno / horario */}
+      {/* Estructura organizacional y jornada */}
       <Card
-        title="Departamento / jefatura inmediata y asignación laboral"
-        subtitle="Asigna el área, sección o departamento donde pertenece el colaborador, su jefatura inmediata, turno y horario"
+        title="Estructura organizacional y jornada"
+        subtitle="La unidad organizacional define la jefatura; la jornada define la asignación técnica de asistencia"
         actions={<Workflow size={18} className="text-white/60" />}
       >
         <div className="space-y-5">
@@ -1841,58 +1836,42 @@ export default function EmployeeFormPage({ mode }: Props) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Select
-              label="Departamento / área / sección donde pertenece *"
+              label="Unidad organizacional *"
               value={form.org_unit_id ?? ''}
-              onChange={(v) => setField('org_unit_id', v || null)}
+              onChange={(v) => {
+                const nextId = v || null
+                setField('org_unit_id', nextId)
+                if (nextId) {
+                  setField('is_org_unit_leader', false)
+                }
+              }}
               options={orgUnitOptions}
-              placeholder="Seleccione el departamento, área o sección…"
+              placeholder="Seleccione la unidad organizacional"
               error={errors.org_unit_id}
             />
             <Select
-              label="Turno efectivo"
-              value={form.work_shift_id ?? ''}
+              label="Jornada asignada"
+              value={form.presential_schedule_id ?? ''}
               onChange={(v) => {
-                setField('work_shift_id', v || null)
-                if (!v) setField('presential_schedule_id', null)
+                const nextId = v || null
+                setField('presential_schedule_id', nextId)
+                const sel = (schedules.data ?? []).find((row) => row.id === nextId)
+                setField('work_shift_id', sel?.turn_id ?? null)
               }}
-              options={shiftOptions}
-              placeholder="Seleccione turno…"
-              error={errors.work_shift_id}
-            />
-            <div className="space-y-1">
-              <Select
-                label="Horario asignado"
-                value={form.presential_schedule_id ?? ''}
-                onChange={(v) => {
-                  const nextId = v || null
-                  setField('presential_schedule_id', nextId)
-                  const sel = (schedules.data ?? []).find((row) => row.id === nextId)
-                  if (sel?.turn_id && sel.turn_id !== form.work_shift_id) {
-                    setField('work_shift_id', sel.turn_id)
-                  }
-                }}
-                options={scheduleOptions}
-                placeholder={form.work_shift_id ? 'Seleccione horario…' : 'Seleccione primero un turno…'}
-                error={errors.presential_schedule_id}
-              />
-              <p className="text-xs text-white/50">
-                Los horarios se filtran según el turno seleccionado y se usan en asistencia, dashboards y reportes.
-              </p>
-            </div>
-            <Select
-              label="Jefatura inmediata / supervisor inmediato"
-              value={form.supervisor_employee_id ?? ''}
-              onChange={(v) => setField('supervisor_employee_id', v || null)}
-              options={peopleOptions.filter((person) => person.value !== id)}
-              placeholder="Seleccione la jefatura inmediata o deje resolución automática"
-              error={errors.supervisor_employee_id}
+              options={scheduleOptions}
+              placeholder="Seleccione jornada"
+              error={errors.presential_schedule_id}
             />
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4 md:col-span-2">
               <div className="text-xs text-white/60">Ruta completa del organigrama</div>
               <div className="mt-2 font-semibold">{orgSummary}</div>
               <div className="mt-2 text-xs text-white/50">
-                Aquí defines el departamento, área o sección exacta donde pertenece el colaborador y quién es su jefatura inmediata.
+                La jefatura inmediata se deriva automáticamente del organigrama. Este formulario ya no pide un jefe manual separado.
               </div>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 md:col-span-2">
+              <div className="text-xs text-white/60">Jefe inmediato derivado</div>
+              <div className="mt-2 font-semibold">{derivedSupervisorLabel}</div>
             </div>
           </div>
 
@@ -1900,34 +1879,22 @@ export default function EmployeeFormPage({ mode }: Props) {
             <Toggle
               on={form.is_org_unit_leader}
               onToggle={() => setField('is_org_unit_leader', !form.is_org_unit_leader)}
-              label="Es jefe del departamento / área / sección a la que pertenece"
+              label="Es líder de esta unidad"
             />
             {form.is_org_unit_leader && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <Select
-                  label="Departamento / área / sección que lidera"
-                  value={form.lead_org_unit_id ?? form.org_unit_id ?? ''}
-                  onChange={(v) => setField('lead_org_unit_id', v || null)}
-                  options={orgUnitOptions}
-                  placeholder="Seleccione unidad…"
-                  error={errors.lead_org_unit_id}
-                />
                 <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
-                  <div className="text-white/60">Nivel de jefatura</div>
+                  <div className="text-white/60">Nivel de liderazgo</div>
                   <div className="mt-2 font-semibold">
                     {leadLevelLabel ?? 'Se determinará por la unidad seleccionada'}
                   </div>
                 </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm">
+                  <div className="text-white/60">Dependencia jerárquica</div>
+                  <div className="mt-2 font-semibold">Se deriva del organigrama</div>
+                </div>
               </div>
             )}
-          </div>
-
-          <div className="rounded-xl bg-white/5 border border-white/10 p-4">
-            <Toggle
-              on={form.is_department_head}
-              onToggle={() => setField('is_department_head', !form.is_department_head)}
-              label={<><Building2 size={14} className="inline mr-1 text-white/60" />Jefe de departamento (legacy)</>}
-            />
           </div>
         </div>
       </Card>
@@ -1948,7 +1915,7 @@ export default function EmployeeFormPage({ mode }: Props) {
           disabled={save.isPending}
           className="shadow-2xl shadow-purple-900/40"
         >
-          {save.isPending ? 'Guardando…' : 'Guardar cambios'}
+          {save.isPending ? 'Guardando' : 'Guardar cambios'}
         </Button>
       </div>
 

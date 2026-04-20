@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Badge } from '@/components/ui/Badge'
+import { baseDebug } from '@/lib/debug'
 
 type Row = {
   id: string
@@ -226,6 +227,20 @@ export default function EmployeesPage() {
     enabled: !!tenantId,
     queryFn: () => fetchEmployees(tenantId!),
   })
+
+  React.useEffect(() => {
+    baseDebug('employees.state', {
+      mode: import.meta.env.MODE,
+      prod: import.meta.env.PROD,
+      tenantId,
+      enabled: Boolean(tenantId),
+      isLoading: emp.isLoading,
+      isFetching: emp.isFetching,
+      isError: emp.isError,
+      error: emp.error instanceof Error ? emp.error.message : emp.error ? String(emp.error) : null,
+      rows: emp.data?.length ?? null,
+    })
+  }, [tenantId, emp.isLoading, emp.isFetching, emp.isError, emp.error, emp.data])
 
   const departments = React.useMemo(() => {
     const set = new Set<string>()

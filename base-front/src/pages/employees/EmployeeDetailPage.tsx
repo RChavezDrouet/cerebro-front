@@ -41,15 +41,20 @@ const DAYS_LABEL: Record<string, string> = {
   '0': 'Dom',
   '1': 'Lun',
   '2': 'Mar',
-  '3': 'Mié',
+  '3': 'Miércoles',
   '4': 'Jue',
   '5': 'Vie',
-  '6': 'Sáb',
+  '6': 'Sábado',
 }
 
-async function fetchEmployee(tenantId: string, id: string): Promise<any> {
-  let baseRow: any = null
 
+async function signedPhoto(path?: string | null): Promise<string | null> {
+  if (!path) return null
+  const { data } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(path, 60 * 30)
+  return data?.signedUrl ?? null
+}
+
+async function fetchEmployee(tenantId: string, id: string) {
   const v = await supabase
     .schema('public')
     .from('v_employees_full')
@@ -58,65 +63,18 @@ async function fetchEmployee(tenantId: string, id: string): Promise<any> {
     .eq('id', id)
     .single()
 
-  if (!v.error) {
-    baseRow = v.data
-  } else {
-    const { data, error } = await supabase
-      .schema('public')
-      .from('employees')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .eq('id', id)
-      .single()
+  if (!v.error) return v.data
 
-    if (error) throw error
-    baseRow = data
-  }
+  const { data, error } = await supabase
+    .schema('public')
+    .from('employees')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('id', id)
+    .single()
 
-  const [contact, pwaSettings, profile] = await Promise.all([
-    fetchEmployeeContact(tenantId, id),
-    fetchEmployeePwaSelfServiceSettings(id),
-    fetchEmployeeProfile(id),
-  ])
-
-  const resolvedWorkMode =
-    profile?.work_mode?.toUpperCase?.() ??
-    baseRow?.work_mode?.toUpperCase?.() ??
-    baseRow?.work_modality?.toUpperCase?.() ??
-    null
-
-  return {
-    ...baseRow,
-    phone: contact?.phone ?? null,
-    address: contact?.address ?? null,
-
-    work_mode: resolvedWorkMode,
-    work_modality: resolvedWorkMode ?? null,
-
-    presential_days: profile?.onsite_days ?? baseRow?.onsite_days ?? baseRow?.presential_days ?? [],
-
-    presential_schedule_id:
-      profile?.presential_schedule_id ?? baseRow?.presential_schedule_id ?? null,
-
-    entry_biometric_id: profile?.entry_biometric_id ?? baseRow?.entry_biometric_id ?? null,
-    exit_biometric_id: profile?.exit_biometric_id ?? baseRow?.exit_biometric_id ?? null,
-
-    pwa_self_service_enabled: pwaSettings?.pwa_self_service_enabled ?? false,
-    pwa_self_service_locked: pwaSettings?.pwa_self_service_locked ?? false,
-    pwa_self_service_completed_at: pwaSettings?.pwa_self_service_completed_at ?? null,
-
-    geofence_radius_m: pwaSettings?.geofence_radius_m ?? baseRow?.geofence_radius_m ?? null,
-    geofence_lat: pwaSettings?.geofence_lat ?? baseRow?.geofence_lat ?? null,
-    geofence_lng: pwaSettings?.geofence_lng ?? baseRow?.geofence_lng ?? null,
-
-    allow_remote_pwa: profile?.allow_remote_pwa ?? baseRow?.allow_remote_pwa ?? null,
-  }
-}
-
-async function signedPhoto(path?: string | null): Promise<string | null> {
-  if (!path) return null
-  const { data } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(path, 60 * 30)
-  return data?.signedUrl ?? null
+  if (error) throw error
+  return data
 }
 
 async function fetchEmployeePwaSelfServiceSettings(employeeId: string) {
@@ -302,6 +260,10 @@ export default function EmployeeDetailPage() {
   if (emp.isLoading) return <div className="text-white/70">Cargando…</div>
   if (emp.isError) return <div className="text-rose-200">{(emp.error as any)?.message || 'Error'}</div>
 
+  if (!emp.data || typeof emp.data !== 'object') {
+    return <div className="text-rose-200">No se pudo cargar la ficha del colaborador.</div>
+  }
+
   const e: any = emp.data
   const status = String(e.employment_status || e.attendance_status || e.status || 'ACTIVE').toUpperCase()
   const modality = String(e.work_mode || e.work_modality || 'PRESENCIAL').toUpperCase()
@@ -346,9 +308,9 @@ export default function EmployeeDetailPage() {
               {e.first_name} {e.last_name}
             </h1>
 
-            {(orgAssignment.data?.is_unit_leader || e.is_department_head) && (
+            {orgAssignment.data?.is_unit_leader && (
               <span title="Jefatura organizacional" className="flex items-center gap-1 text-xs text-yellow-400 font-semibold">
-                <Star size={14} className="fill-yellow-400" /> Jefe
+                <Star size={14} className="fill-yellow-400" /> Líder de unidad
               </span>
             )}
           </div>
@@ -356,7 +318,7 @@ export default function EmployeeDetailPage() {
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Badge tone={toneFromStatus(status) as any}>{status}</Badge>
             <span className="text-sm text-white/60">
-              Código: <span className="font-semibold text-white">{e.employee_code ?? e.employee_number ?? '—'}</span>
+              Código: <span className="font-semibold text-white">{e.employee_code ?? e.employee_number ?? ''}</span>
             </span>
           </div>
         </div>
@@ -370,33 +332,33 @@ export default function EmployeeDetailPage() {
         <Card title="Ficha" className="xl:col-span-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
             <div className="card p-4">
-              <div className="text-white/60">Departamento</div>
-              <div className="mt-2 font-semibold">{e.department_name ?? '—'}</div>
+              <div className="text-white/60">Departamento / unidad</div>
+              <div className="mt-2 font-semibold">{e.department_name ?? ''}</div>
             </div>
 
             <div className="card p-4">
               <div className="text-white/60">Fecha contratación</div>
-              <div className="mt-2 font-semibold">{e.hire_date ?? '—'}</div>
+              <div className="mt-2 font-semibold">{e.hire_date ?? ''}</div>
             </div>
 
             <div className="card p-4">
               <div className="text-white/60">Sueldo</div>
-              <div className="mt-2 font-semibold">{e.salary != null ? Number(e.salary).toFixed(2) : '—'}</div>
+              <div className="mt-2 font-semibold">{e.salary != null ? Number(e.salary).toFixed(2) : ''}</div>
             </div>
 
             <div className="card p-4">
               <div className="text-white/60">Email</div>
-              <div className="mt-2 font-semibold">{e.email ?? '—'}</div>
+              <div className="mt-2 font-semibold">{e.email ?? ''}</div>
             </div>
 
             <div className="card p-4">
               <div className="text-white/60">Teléfono</div>
-              <div className="mt-2 font-semibold">{e.phone ?? '—'}</div>
+              <div className="mt-2 font-semibold">{e.phone ?? ''}</div>
             </div>
 
             <div className="card p-4 md:col-span-2">
               <div className="text-white/60">Dirección</div>
-              <div className="mt-2 font-semibold">{e.address ?? '—'}</div>
+              <div className="mt-2 font-semibold">{e.address ?? ''}</div>
             </div>
 
             <div className="card p-4">
@@ -416,8 +378,8 @@ export default function EmployeeDetailPage() {
               <div className="mt-2 font-semibold">
                 {orgAssignment.data?.is_unit_leader
                   ? leaderLevelLabel
-                    ? `Jefe de ${leaderLevelLabel}`
-                    : 'Jefe de unidad'
+                    ? `Líder de ${leaderLevelLabel}`
+                    : 'L?der de unidad'
                   : 'No aplica'}
               </div>
             </div>
@@ -426,7 +388,7 @@ export default function EmployeeDetailPage() {
 
         <Card title="Fotografía" subtitle="Reconocimiento facial" actions={<Camera size={18} className="text-white/60" />}>
           {photo.data ? (
-            <img src={photo.data} className="w-full rounded-2xl border border-white/10" alt="Foto empleado" />
+            <img src={photo.data} className="w-full rounded-2xl border border-white/10" alt="Foto del colaborador" />
           ) : (
             <div className="text-sm text-white/60">Sin foto registrada.</div>
           )}
@@ -453,7 +415,7 @@ export default function EmployeeDetailPage() {
                     </span>
                   ))
                 ) : (
-                  <span className="text-white/50">—</span>
+                  <span className="text-white/50">Sin días presenciales</span>
                 )}
               </div>
             </div>
@@ -469,8 +431,8 @@ export default function EmployeeDetailPage() {
 
               {e.location_mode === 'UBICACION' && (
                 <div className="mt-1 text-xs text-white/50 space-y-0.5">
-                  <div>Entrada: {e.entry_biometric_location ?? e.entry_biometric_id ?? '—'}</div>
-                  <div>Salida: {e.exit_biometric_location ?? e.exit_biometric_id ?? '—'}</div>
+                  <div>Entrada: {e.entry_biometric_location ?? e.entry_biometric_id ?? 'Sin dato'}</div>
+                  <div>Salida: {e.exit_biometric_location ?? e.exit_biometric_id ?? 'Sin dato'}</div>
                 </div>
               )}
             </div>
@@ -519,12 +481,12 @@ export default function EmployeeDetailPage() {
             <div className="text-white/60">Umbral GPS válido</div>
             <div className="mt-2 font-semibold flex items-center gap-2">
               <LocateFixed size={14} className="text-cyan-300" />
-              {e.geofence_radius_m != null ? `${Number(e.geofence_radius_m).toFixed(0)} m` : '—'}
+              {e.geofence_radius_m != null ? `${Number(e.geofence_radius_m).toFixed(0)} m` : 'Aún no registrado en PWA'}
             </div>
           </div>
 
           <div className="card p-4 md:col-span-3">
-            <div className="text-white/60">GPS registrado por el empleado</div>
+            <div className="text-white/60">GPS registrado por el colaborador</div>
             <div className="mt-2 font-semibold">
               {e.geofence_lat != null && e.geofence_lng != null
                 ? `${Number(e.geofence_lat).toFixed(6)}, ${Number(e.geofence_lng).toFixed(6)}`
@@ -536,28 +498,28 @@ export default function EmployeeDetailPage() {
 
       <EmployeeOrgSection
         orgPath={buildOrgPath(orgUnits.data ?? [], orgAssignment.data?.org_unit_id)}
-        currentUnit={currentOrgUnit?.name ?? '—'}
+        currentUnit={currentOrgUnit?.name ?? 'Sin unidad organizacional'}
         supervisor={supervisorLabel}
         isLeader={orgAssignment.data?.is_unit_leader}
         leaderLevelLabel={leaderLevelLabel}
       />
 
-      <Card title="Turno y horario efectivo" actions={<Workflow size={18} className="text-white/60" />}>
+      <Card title="Jornada y configuración técnica" actions={<Workflow size={18} className="text-white/60" />}>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div className="card p-4">
-            <div className="text-white/60">Turno específico</div>
+            <div className="text-white/60">Jornada técnica</div>
             <div className="mt-2 font-semibold">
               {shiftInfo ? `${shiftInfo.name}${shiftInfo.code ? ` (${shiftInfo.code})` : ''}` : 'Sin sobrescritura individual'}
             </div>
           </div>
 
           <div className="card p-4">
-            <div className="text-white/60">Horario presencial</div>
-            <div className="mt-2 font-semibold">{e.presential_schedule_name ?? e.presential_schedule_id ?? '—'}</div>
+            <div className="text-white/60">Jornada presencial</div>
+            <div className="mt-2 font-semibold">{e.presential_schedule_name ?? e.presential_schedule_id ?? 'Sin jornada presencial'}</div>
           </div>
 
           <div className="card p-4">
-            <div className="text-white/60">Jefe de unidad</div>
+            <div className="text-white/60">Unidad líder</div>
             <div className="mt-2 font-semibold">{leaderUnit?.name ?? 'No aplica'}</div>
           </div>
         </div>
@@ -568,7 +530,7 @@ export default function EmployeeDetailPage() {
           <AssignmentHistoryTable rows={orgRows} />
         </Card>
 
-        <Card title="Historial de turnos">
+        <Card title="Historial de jornadas">
           <AssignmentHistoryTable rows={shiftRows} />
         </Card>
       </div>
