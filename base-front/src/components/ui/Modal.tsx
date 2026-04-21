@@ -24,7 +24,7 @@ export function Modal({ open, title, children, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
-        className="relative w-[min(720px,92vw)] rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 text-[var(--text-primary)] shadow-soft"
+        className="relative flex max-h-[92vh] w-[min(760px,94vw)] flex-col overflow-hidden rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-elevated)] p-5 text-[var(--text-primary)] shadow-soft"
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>{title ? <h3 id={titleId} className="text-base font-semibold text-[var(--text-primary)]">{title}</h3> : null}</div>
@@ -37,7 +37,9 @@ export function Modal({ open, title, children, onClose }: Props) {
             <X size={18} />
           </button>
         </div>
-        {children}
+        <div className="min-h-0 overflow-y-auto pr-1">
+          {children}
+        </div>
       </div>
     </div>
   )

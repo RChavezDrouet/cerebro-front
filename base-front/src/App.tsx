@@ -21,6 +21,7 @@ import UsbImportPage from '@/pages/attendance/UsbImportPage'
 import TestAIPage from '@/pages/TestAIPage'
 
 import ConfigHomePage from '@/pages/config/ConfigHomePage'
+import ApprovalFlowsPage from '@/pages/config/ApprovalFlowsPage'
 import CompanyConfigPage from '@/pages/config/CompanyConfigPage'
 import FacialRecognitionPage from '@/pages/config/FacialRecognitionPage'
 import MarkingParamsPage from '@/pages/config/MarkingParamsPage'
@@ -43,6 +44,13 @@ import AttendanceReportCiraPage from './pages/cira/AttendanceReportCiraPage'
 import JornadasConfigPage from './pages/cira/JornadasConfigPage'
 import JornadaAsignacionPage from './pages/cira/JornadaAsignacionPage'
 import ReportesPage from './pages/reports/ReportesPage'
+import PendingApprovalsPage from './pages/management/PendingApprovalsPage'
+import RequestsHomePage from './pages/management/RequestsHomePage'
+import AttendanceJustificationsRequestPage from './pages/management/AttendanceJustificationsRequestPage'
+import PermissionRequestsPage from './pages/management/PermissionRequestsPage'
+import LoanRequestsPage from './pages/management/LoanRequestsPage'
+import SalaryAdvanceRequestsPage from './pages/management/SalaryAdvanceRequestsPage'
+import VacationRequestsPage from './pages/management/VacationRequestsPage'
 import PayrollHomePage from './pages/payroll/PayrollHomePage'
 import PayrollPeriodsPage from './pages/payroll/PayrollPeriodsPage'
 import PayrollRunsPage from './pages/payroll/PayrollRunsPage'
@@ -102,6 +110,7 @@ export default function App() {
           <Route path="/reports/detailed" element={<Navigate to="/reports/marcaciones" replace />} />
 
           <Route path="/config" element={<ConfigHomePage />} />
+          <Route path="/config/approval-flows" element={<ApprovalFlowsPage />} />
           <Route path="/config/company" element={<CompanyConfigPage />} />
           <Route path="/config/reconocimiento-facial" element={<FacialRecognitionPage />} />
           <Route path="/config/marcacion" element={<MarkingParamsPage />} />
@@ -130,6 +139,15 @@ export default function App() {
           <Route path="/payroll" element={<PayrollHomePage />} />
           <Route path="/payroll/periods" element={<PayrollPeriodsPage />} />
           <Route path="/payroll/runs" element={<PayrollRunsPage />} />
+
+          <Route path="/management" element={<Navigate to="/management/requests" replace />} />
+          <Route path="/management/requests" element={<RequestsHomePage />} />
+          <Route path="/management/requests/justifications" element={<AttendanceJustificationsRequestPage />} />
+          <Route path="/management/requests/permissions" element={<PermissionRequestsPage />} />
+          <Route path="/management/requests/loans" element={<LoanRequestsPage />} />
+          <Route path="/management/requests/salary-advances" element={<SalaryAdvanceRequestsPage />} />
+          <Route path="/management/requests/vacations" element={<VacationRequestsPage />} />
+          <Route path="/management/approvals" element={<PendingApprovalsPage />} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

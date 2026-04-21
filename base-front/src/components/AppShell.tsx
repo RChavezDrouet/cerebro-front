@@ -29,15 +29,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="min-h-full">
+    <div className="min-h-full overflow-x-hidden">
       <div className="border-b border-white/10 bg-black/10">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link to="/" className="text-sm font-bold tracking-wide">
+        <div className="mx-auto flex w-full max-w-screen-2xl min-w-0 items-center justify-between gap-3 px-3 py-3 sm:px-4 lg:px-6">
+          <Link to="/" className="min-w-0 text-sm font-bold tracking-wide">
             HRCloud Base
           </Link>
 
-          <div className="flex items-center gap-2">
-            <div className="hidden items-center gap-1 sm:flex">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="hidden max-w-full items-center gap-1 sm:flex">
               {navItem('/config/turnos', 'Turnos')}
               {navItem('/config/horarios', 'Horarios')}
               {navItem('/employees', 'Empleados')}
@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </div>
 
-      <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
+      <main className="mx-auto w-full max-w-screen-2xl min-w-0 px-3 py-4 sm:px-4 sm:py-6 lg:px-6">{children}</main>
     </div>
   )
 }

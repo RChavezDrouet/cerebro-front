@@ -57,12 +57,12 @@ export function ExecutiveGauge({
         : 'text-rose-300'
 
   return (
-    <div className="relative overflow-hidden rounded-[2rem] border border-white/10 bg-[#09111b]/84 px-4 py-5 shadow-soft">
+    <div className="relative min-w-0 overflow-hidden rounded-[2rem] border border-white/10 bg-[#09111b]/84 px-4 py-5 shadow-soft">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_38%)]" />
       <div className="absolute inset-x-10 top-3 h-20 rounded-full bg-emerald-400/8 blur-3xl" />
 
       <div className="relative">
-        <svg viewBox="0 0 260 190" className="mx-auto h-64 w-full max-w-[23rem]">
+        <svg viewBox="0 0 260 190" className="mx-auto h-56 w-full max-w-[22rem] sm:h-64">
           <defs>
             <linearGradient id={`${gradientId}-track`} x1="0%" x2="100%" y1="0%" y2="0%">
               <stop offset="0%" stopColor="#fb7185" />

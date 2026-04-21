@@ -37,7 +37,7 @@ export function AppShell() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen overflow-x-hidden">
       <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:w-72 lg:block">
         <div className="h-full bg-[#0b1220]/70 glass border-r border-white/10">
           <SideNav />
@@ -50,12 +50,12 @@ export function AppShell() {
 
       <div className="lg:pl-72">
         <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b1220]/70 glass">
-          <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-3">
+          <div className="mx-auto flex w-full max-w-screen-2xl min-w-0 items-center justify-between gap-3 px-3 py-3 sm:px-4 lg:px-6">
+            <div className="flex min-w-0 items-center gap-3">
               <button className="lg:hidden rounded-2xl border border-white/10 p-2 hover:bg-white/10" onClick={() => setOpen(true)}>
                 <Menu size={18} />
               </button>
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs text-white/50">HRCloud Base</div>
                 <div className="text-sm font-semibold">Asistencia & RRHH</div>
               </div>
@@ -65,7 +65,7 @@ export function AppShell() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-7xl px-4 py-6">
+        <main className="mx-auto w-full max-w-screen-2xl min-w-0 px-3 py-4 sm:px-4 sm:py-6 lg:px-6">
           <Outlet />
         </main>
       </div>

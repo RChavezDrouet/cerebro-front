@@ -9,9 +9,9 @@ export function AttendanceDashboard({ metrics }: { metrics: { present: number; l
   ]
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
       {cards.map(({ label, value, Icon }) => (
-        <div key={label} className="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-lg shadow-slate-950/40">
+        <div key={label} className="min-w-0 rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-lg shadow-slate-950/40">
           <div className="mb-3 flex items-center justify-between">
             <span className="text-sm text-slate-400">{label}</span>
             <Icon className="h-5 w-5 text-cyan-400" />

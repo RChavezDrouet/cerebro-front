@@ -169,7 +169,7 @@ export function ExecutiveTrendChart({
       </div>
 
       <div className="mt-4 overflow-x-auto">
-        <svg key={pointsKey} viewBox={`0 0 ${width} ${height}`} className="h-[21rem] w-full min-w-[42rem]">
+        <svg key={pointsKey} viewBox={`0 0 ${width} ${height}`} className="h-[19rem] w-full min-w-[36rem] sm:h-[21rem] sm:min-w-[42rem]">
           <defs>
             <linearGradient id={`${gradientId}-onsite-line`} x1="0%" x2="100%" y1="0%" y2="0%">
               <stop offset="0%" stopColor="#22d3ee" />

@@ -39,3 +39,8 @@ Ejecuta los scripts:
 - `supabase/sql/003_seed_attendance_defaults.sql`
 
 Ver: `docs/03_DB_SUPABASE.md`
+
+## Documentacion funcional nueva
+
+- `docs/05_SOLICITUDES_Y_APROBACIONES_FUNCIONAL.md`
+- `docs/06_GUIA_USUARIO_SOLICITUDES_Y_APROBACIONES.md`
