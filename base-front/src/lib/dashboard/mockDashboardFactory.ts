@@ -1,4 +1,3 @@
-import { ENV } from '@/lib/env'
 import type { OrgLevelDefinition, OrgUnit } from '@/lib/orgStructure'
 
 import type {
@@ -78,7 +77,7 @@ export function resolveDashboardDataMode(search = ''): DashboardDataMode {
   if (forced === 'real') return 'real'
   if (forced === 'mock') return 'mock'
 
-  return ENV.IS_PRODUCTION ? 'real' : 'mock'
+  return 'real'
 }
 
 export function isDashboardMockModeEnabled(search = '') {

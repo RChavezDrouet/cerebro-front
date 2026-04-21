@@ -152,6 +152,8 @@ export type DashboardKpis = {
 
 type GenericRow = Record<string, unknown>
 
+export const DEFAULT_DASHBOARD_TIMEZONE = 'America/Guayaquil'
+
 function pad(value: number) {
   return String(value).padStart(2, '0')
 }
@@ -160,44 +162,104 @@ export function isoDate(value: Date) {
   return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
 }
 
-export function periodRange(period: DashboardPeriod) {
-  const today = new Date()
-  const to = isoDate(today)
+function getDatePartsInTimeZone(timeZone: string, date = new Date()) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+
+  const parts = formatter.formatToParts(date)
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? ''
+
+  const year = get('year')
+  const month = get('month')
+  const day = get('day')
+
+  if (!year || !month || !day) {
+    return null
+  }
+
+  return {
+    year: Number(year),
+    month: Number(month),
+    day: Number(day),
+    iso: `${year}-${month}-${day}`,
+  }
+}
+
+function createDateFromIsoAtNoon(iso: string) {
+  return new Date(`${iso}T12:00:00Z`)
+}
+
+function addDaysToIso(iso: string, amount: number) {
+  const next = createDateFromIsoAtNoon(iso)
+  next.setUTCDate(next.getUTCDate() + amount)
+  return isoDate(next)
+}
+
+export function periodRange(period: DashboardPeriod, timeZone = DEFAULT_DASHBOARD_TIMEZONE) {
+  const zonedNow = getDatePartsInTimeZone(timeZone) ?? getDatePartsInTimeZone(DEFAULT_DASHBOARD_TIMEZONE) ?? getDatePartsInTimeZone('UTC')
+
+  const today = zonedNow?.iso ?? isoDate(new Date())
+  const todayMonth = zonedNow?.month ?? new Date().getMonth() + 1
+  const todayYear = zonedNow?.year ?? new Date().getFullYear()
+  const to = today
 
   if (period === 'hoy') return { from: to, to }
 
   if (period === 'semana') {
-    const offset = today.getDay() === 0 ? 6 : today.getDay() - 1
-    const monday = new Date(today)
-    monday.setDate(today.getDate() - offset)
-    return { from: isoDate(monday), to }
+    const mondayBase = createDateFromIsoAtNoon(today)
+    const offset = mondayBase.getUTCDay() === 0 ? 6 : mondayBase.getUTCDay() - 1
+    return { from: addDaysToIso(today, -offset), to }
   }
 
   if (period === 'mes') {
-    return { from: `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`, to }
+    return { from: `${todayYear}-${pad(todayMonth)}-01`, to }
   }
 
-  const quarterStartMonth = Math.floor(today.getMonth() / 3) * 3
-  return { from: isoDate(new Date(today.getFullYear(), quarterStartMonth, 1)), to }
+  const quarterStartMonth = Math.floor((todayMonth - 1) / 3) * 3 + 1
+  return { from: `${todayYear}-${pad(quarterStartMonth)}-01`, to }
 }
 
-export function formatDateLabel(value: string) {
+export async function fetchDashboardTimezone(tenantId: string): Promise<string> {
+  const { data, error } = await supabase
+    .schema(ATT_SCHEMA)
+    .from('attendance_rules_v2')
+    .select('timezone')
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  if (error) {
+    if (isMissingEntityError(error, 'attendance_rules_v2')) {
+      return DEFAULT_DASHBOARD_TIMEZONE
+    }
+    throw error
+  }
+
+  const timezone = String((data as GenericRow | null)?.timezone ?? '').trim()
+  return timezone || DEFAULT_DASHBOARD_TIMEZONE
+}
+
+export function formatDateLabel(value: string, timeZone = DEFAULT_DASHBOARD_TIMEZONE) {
   if (!value) return 'N/A'
   try {
     return new Intl.DateTimeFormat('es-EC', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
-      timeZone: 'America/Guayaquil',
+      timeZone,
     }).format(new Date(`${value}T00:00:00`))
   } catch {
     return value
   }
 }
 
-export function formatPeriodLabel(from: string, to: string) {
-  if (from === to) return formatDateLabel(from)
-  return `${formatDateLabel(from)} - ${formatDateLabel(to)}`
+export function formatPeriodLabel(from: string, to: string, timeZone = DEFAULT_DASHBOARD_TIMEZONE) {
+  if (from === to) return formatDateLabel(from, timeZone)
+  return `${formatDateLabel(from, timeZone)} - ${formatDateLabel(to, timeZone)}`
 }
 
 export function formatNumber(value: number) {
@@ -234,17 +296,55 @@ function includesAny(base: string, tokens: string[]) {
 
 function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message
+  if (error && typeof error === 'object') {
+    const record = error as Record<string, unknown>
+    return [
+      record.message,
+      record.details,
+      record.hint,
+      record.code,
+      record.error_description,
+      record.error,
+    ]
+      .filter((value) => value != null && String(value).trim() !== '')
+      .map((value) => String(value))
+      .join(' | ')
+  }
   return String(error ?? '')
 }
 
+function errorStatus(error: unknown) {
+  if (!error || typeof error !== 'object') return null
+  const record = error as Record<string, unknown>
+  const raw = record.status ?? record.statusCode
+  return typeof raw === 'number' ? raw : Number.isFinite(Number(raw)) ? Number(raw) : null
+}
+
+function errorCode(error: unknown) {
+  if (!error || typeof error !== 'object') return ''
+  const record = error as Record<string, unknown>
+  return String(record.code ?? '').trim().toUpperCase()
+}
+
 function isMissingEntityError(error: unknown, entityName: string) {
-  const message = errorMessage(error)
+  const message = errorMessage(error).toLowerCase()
+  const status = errorStatus(error)
+  const code = errorCode(error)
+  const normalizedEntity = entityName.toLowerCase()
+
   return (
-    message.includes(entityName) ||
-    message.includes('Could not find the table') ||
-    message.includes('Could not find the function') ||
+    status === 404 ||
+    code === 'PGRST205' ||
+    code === '42P01' ||
+    code === '42883' ||
+    code === '42703' ||
+    message.includes(normalizedEntity) ||
+    message.includes('could not find the table') ||
+    message.includes('could not find the function') ||
     message.includes('relation') ||
-    message.includes('does not exist')
+    message.includes('does not exist') ||
+    message.includes('not found') ||
+    message.includes('undefined column')
   )
 }
 
@@ -275,9 +375,38 @@ function rangeOverlapsRange(start: string | null, end: string | null, from: stri
   return left <= to && right >= from
 }
 
-function buildEcDayBoundary(dateIso: string, endOfDay = false) {
-  const suffix = endOfDay ? 'T23:59:59-05:00' : 'T00:00:00-05:00'
-  return new Date(`${dateIso}${suffix}`).toISOString()
+function getTimeZoneOffsetMinutes(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    timeZoneName: 'shortOffset',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+
+  const parts = formatter.formatToParts(date)
+  const timeZoneName = parts.find((part) => part.type === 'timeZoneName')?.value ?? 'GMT'
+  const match = timeZoneName.match(/^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/i)
+
+  if (!match) return 0
+
+  const sign = match[1] === '-' ? -1 : 1
+  const hours = Number(match[2] ?? 0)
+  const minutes = Number(match[3] ?? 0)
+  return sign * (hours * 60 + minutes)
+}
+
+function buildEcDayBoundary(dateIso: string, endOfDay = false, timeZone = DEFAULT_DASHBOARD_TIMEZONE) {
+  const [year, month, day] = dateIso.split('-').map((value) => Number(value))
+  if (!year || !month || !day) return new Date(`${dateIso}T12:00:00Z`).toISOString()
+
+  const localHour = endOfDay ? 23 : 0
+  const localMinute = endOfDay ? 59 : 0
+  const localSecond = endOfDay ? 59 : 0
+  const approximateUtc = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+  const offsetMinutes = getTimeZoneOffsetMinutes(approximateUtc, timeZone)
+  const utcMillis = Date.UTC(year, month - 1, day, localHour, localMinute, localSecond) - (offsetMinutes * 60_000)
+  return new Date(utcMillis).toISOString()
 }
 
 function normalizeBiometricMethodLabel(method: string) {
@@ -560,6 +689,7 @@ export async function fetchPunchSourceRows(
   tenantId: string,
   from: string,
   to: string,
+  timeZone = DEFAULT_DASHBOARD_TIMEZONE,
 ): Promise<OptionalDataset<DashboardPunchSourceRow>> {
   const rpcResult = await supabase
     .schema(ATT_SCHEMA)
@@ -585,8 +715,8 @@ export async function fetchPunchSourceRows(
     .from('punches')
     .select('employee_id, punched_at, source, serial_no, meta')
     .eq('tenant_id', tenantId)
-    .gte('punched_at', buildEcDayBoundary(from))
-    .lte('punched_at', buildEcDayBoundary(to, true))
+    .gte('punched_at', buildEcDayBoundary(from, false, timeZone))
+    .lte('punched_at', buildEcDayBoundary(to, true, timeZone))
     .order('punched_at')
 
   if (fallback.error) {
